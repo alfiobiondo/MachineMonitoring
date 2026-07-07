@@ -5,6 +5,7 @@ namespace MachineMonitoring.Domain
         Offline,
         Idle,
         Running,
-        Alarm
+        Alarm,
+        Maintenance,
     }
 }

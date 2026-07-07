@@ -1,5 +1,6 @@
 using MachineMonitoring.Application.Configuration;
 using MachineMonitoring.Application.Exceptions;
+using MachineMonitoring.Application.Reports;
 using MachineMonitoring.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -64,47 +65,9 @@ public class MachinePollingService
     {
         try
         {
-            IReadOnlyCollection<Machine> machines = await _machineManager.GetMachinesAsync(
-                cancellationToken
-            );
+            MachineReport report = await _machineManager.CreateReportAsync(cancellationToken);
 
-            DateTimeOffset currentTime = DateTimeOffset.Now;
-
-            Console.WriteLine(
-                $"[{currentTime:HH:mm:ss}] " + $"{machines.Count} machines retrieved."
-            );
-
-            foreach (Machine machine in machines)
-            {
-                if (machine.Status == MachineStatus.Alarm)
-                {
-                    _logger.LogWarning("Machine {MachineId} is in alarm state.", machine.Id);
-                }
-                else if (machine.Status == MachineStatus.Offline)
-                {
-                    _logger.LogWarning("Machine {MachineId} is offline.", machine.Id);
-                }
-
-                string description = _machineManager.GetDetailedMachineDescription(machine);
-
-                Console.WriteLine($"- {description}");
-            }
-
-            int runningCount = machines.Count(machine => machine.Status == MachineStatus.Running);
-
-            int idleCount = machines.Count(machine => machine.Status == MachineStatus.Idle);
-
-            int offlineCount = machines.Count(machine => machine.Status == MachineStatus.Offline);
-
-            int alarmCount = machines.Count(machine => machine.Status == MachineStatus.Alarm);
-
-            Console.WriteLine(
-                $"Status summary: "
-                    + $"Running={runningCount}, "
-                    + $"Idle={idleCount}, "
-                    + $"Offline={offlineCount}, "
-                    + $"Alarm={alarmCount}"
-            );
+            PrintReport(report);
         }
         catch (MachineUnavailableException exception)
         {
@@ -114,5 +77,26 @@ public class MachinePollingService
                     + "The next polling cycle will retry."
             );
         }
+    }
+
+    private static void PrintReport(MachineReport report)
+    {
+        Console.WriteLine(
+            $"[{report.GeneratedAt:HH:mm:ss}] " + $"{report.Machines.Count} machines retrieved."
+        );
+
+        foreach (string description in report.Descriptions)
+        {
+            Console.WriteLine($"- {description}");
+        }
+
+        MachineStatusSummary summary = report.StatusSummary;
+
+        string statusText = string.Join(
+            ", ",
+            Enum.GetValues<MachineStatus>().Select(status => $"{status}={summary.GetCount(status)}")
+        );
+
+        Console.WriteLine($"Status summary ({summary.TotalCount} total): " + statusText);
     }
 }

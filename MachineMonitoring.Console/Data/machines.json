@@ -26,5 +26,12 @@
 		"status": "Alarm",
 		"location": "Packaging Area",
 		"serialNumber": "SN-2026-004"
+	},
+	{
+		"id": "M-005",
+		"name": "Shipping Station",
+		"status": "Maintenance",
+		"location": "Shipping Area",
+		"serialNumber": "SN-2026-005"
 	}
 ]
