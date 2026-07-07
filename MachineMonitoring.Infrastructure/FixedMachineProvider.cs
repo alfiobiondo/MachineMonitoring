@@ -9,18 +9,21 @@ namespace MachineMonitoring.Infrastructure;
 
 public class FixedMachineProvider : IMachineProvider
 {
-    public Task<Machine> GetMachineAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyCollection<Machine>> GetMachinesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        Machine machine = new(
-            id: "M-002",
-            name: "Tube Bender",
-            status: MachineStatus.Idle,
-            location: "Production Hall B",
-            serialNumber: "SN-2026-002"
-        );
+        IReadOnlyCollection<Machine> machines = new List<Machine>
+        {
+            new(
+                id: "M-002",
+                name: "Tube Bender",
+                status: MachineStatus.Idle,
+                location: "Production Hall B",
+                serialNumber: "SN-2026-002"
+            ),
+        };
 
-        return Task.FromResult(machine);
+        return Task.FromResult(machines);
     }
 }

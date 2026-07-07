@@ -24,12 +24,21 @@ public class MachineReporter
     {
         _logger.LogInformation("Machine report generation started.");
 
-        string description = await _machineManager.GetDetailedMachineDescriptionAsync(
-            cancellationToken
+        IReadOnlyCollection<string> descriptions =
+            await _machineManager.GetDetailedMachineDescriptionsAsync(cancellationToken);
+
+        Console.WriteLine("=== MACHINE REPORT ===");
+
+        foreach (string description in descriptions)
+        {
+            Console.WriteLine(description);
+        }
+
+        Console.WriteLine("======================");
+
+        _logger.LogInformation(
+            "Machine report generation completed for {MachineCount} machines.",
+            descriptions.Count
         );
-
-        Console.WriteLine($"=== MACHINE REPORT === \n{description} \n======================");
-
-        _logger.LogInformation("Machine report generation completed.");
     }
 }

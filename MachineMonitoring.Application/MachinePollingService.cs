@@ -1,5 +1,6 @@
 using MachineMonitoring.Application.Configuration;
 using MachineMonitoring.Application.Exceptions;
+using MachineMonitoring.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -63,21 +64,54 @@ public class MachinePollingService
     {
         try
         {
-            string description = await _machineManager.GetDetailedMachineDescriptionAsync(
+            IReadOnlyCollection<Machine> machines = await _machineManager.GetMachinesAsync(
                 cancellationToken
             );
 
-            Console.WriteLine($"[{DateTimeOffset.Now:HH:mm:ss}] {description}");
-        }
-        catch (InvalidMachineStateException exception)
-        {
-            _logger.LogWarning(exception, "Machine polling detected an invalid machine state.");
+            DateTimeOffset currentTime = DateTimeOffset.Now;
+
+            Console.WriteLine(
+                $"[{currentTime:HH:mm:ss}] " + $"{machines.Count} machines retrieved."
+            );
+
+            foreach (Machine machine in machines)
+            {
+                if (machine.Status == MachineStatus.Alarm)
+                {
+                    _logger.LogWarning("Machine {MachineId} is in alarm state.", machine.Id);
+                }
+                else if (machine.Status == MachineStatus.Offline)
+                {
+                    _logger.LogWarning("Machine {MachineId} is offline.", machine.Id);
+                }
+
+                string description = _machineManager.GetDetailedMachineDescription(machine);
+
+                Console.WriteLine($"- {description}");
+            }
+
+            int runningCount = machines.Count(machine => machine.Status == MachineStatus.Running);
+
+            int idleCount = machines.Count(machine => machine.Status == MachineStatus.Idle);
+
+            int offlineCount = machines.Count(machine => machine.Status == MachineStatus.Offline);
+
+            int alarmCount = machines.Count(machine => machine.Status == MachineStatus.Alarm);
+
+            Console.WriteLine(
+                $"Status summary: "
+                    + $"Running={runningCount}, "
+                    + $"Idle={idleCount}, "
+                    + $"Offline={offlineCount}, "
+                    + $"Alarm={alarmCount}"
+            );
         }
         catch (MachineUnavailableException exception)
         {
             _logger.LogError(
                 exception,
-                "Machine polling could not retrieve the machine. The next polling cycle will retry."
+                "Machine polling could not retrieve the machines. "
+                    + "The next polling cycle will retry."
             );
         }
     }

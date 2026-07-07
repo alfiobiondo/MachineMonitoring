@@ -1,7 +1,30 @@
-{
-  "id": "M-001",
-  "serialNumber": "SN-2026-001",
-  "name": "Laser Cutter",
-  "status": "Running",
-  "location": "Production Hall A"
-}
+[
+	{
+		"id": "M-001",
+		"name": "Laser Cutter",
+		"status": "Running",
+		"location": "Production Hall A",
+		"serialNumber": "SN-2026-001"
+	},
+	{
+		"id": "M-002",
+		"name": "Tube Bender",
+		"status": "Idle",
+		"location": "Production Hall B",
+		"serialNumber": "SN-2026-002"
+	},
+	{
+		"id": "M-003",
+		"name": "Quality Control Station",
+		"status": "Offline",
+		"location": "Testing Area",
+		"serialNumber": "SN-2026-003"
+	},
+	{
+		"id": "M-004",
+		"name": "Packing Station",
+		"status": "Alarm",
+		"location": "Packaging Area",
+		"serialNumber": "SN-2026-004"
+	}
+]

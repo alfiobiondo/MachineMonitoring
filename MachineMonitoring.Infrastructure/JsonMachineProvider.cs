@@ -26,7 +26,9 @@ public class JsonMachineProvider : IMachineProvider
         _logger = logger;
     }
 
-    public async Task<Machine> GetMachineAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyCollection<Machine>> GetMachinesAsync(
+        CancellationToken cancellationToken
+    )
     {
         string fullPath = Path.GetFullPath(_options.FilePath, AppContext.BaseDirectory);
 
@@ -36,21 +38,41 @@ public class JsonMachineProvider : IMachineProvider
         {
             await using FileStream stream = File.OpenRead(fullPath);
 
-            MachineJsonDto? dto = await JsonSerializer.DeserializeAsync<MachineJsonDto>(
-                stream,
-                cancellationToken: cancellationToken
-            );
+            JsonSerializerOptions serializerOptions = new() { PropertyNameCaseInsensitive = true };
 
-            if (dto is null)
+            List<MachineJsonDto>? dtos = await JsonSerializer.DeserializeAsync<
+                List<MachineJsonDto>
+            >(stream, serializerOptions, cancellationToken);
+
+            if (dtos is null)
             {
-                throw new MachineUnavailableException("The machine data file contains no machine.");
+                throw new MachineUnavailableException(
+                    "The machine data file contains no machine collection."
+                );
             }
 
-            Machine machine = ConvertToDomain(dto);
+            if (dtos.Count == 0)
+            {
+                throw new MachineUnavailableException(
+                    "The machine data file contains an empty machine collection."
+                );
+            }
 
-            _logger.LogInformation("Machine {MachineId} loaded from JSON file.", machine.Id);
+            List<Machine> machines = new();
 
-            return machine;
+            foreach (MachineJsonDto dto in dtos)
+            {
+                Machine machine = ConvertToDomain(dto);
+
+                machines.Add(machine);
+            }
+
+            _logger.LogInformation(
+                "{MachineCount} machines loaded from JSON file.",
+                machines.Count
+            );
+
+            return machines;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

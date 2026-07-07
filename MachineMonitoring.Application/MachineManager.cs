@@ -28,37 +28,75 @@ public class MachineManager
         _logger = logger;
     }
 
-    public Task<Machine> GetMachineAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyCollection<Machine>> GetMachinesAsync(CancellationToken cancellationToken)
     {
-        return _machineProvider.GetMachineAsync(cancellationToken);
+        return _machineProvider.GetMachinesAsync(cancellationToken);
     }
 
-    public async Task<string> GetMachineDescriptionAsync(CancellationToken cancellationToken)
-    {
-        Machine machine = await _machineProvider.GetMachineAsync(cancellationToken);
-
-        return _machineFormatter.Format(machine);
-    }
-
-    public async Task<string> GetDetailedMachineDescriptionAsync(
+    public async Task<IReadOnlyCollection<string>> GetMachineDescriptionsAsync(
         CancellationToken cancellationToken
     )
     {
-        _logger.LogDebug("Retrieving machine asynchronously for detailed description.");
+        IReadOnlyCollection<Machine> machines = await _machineProvider.GetMachinesAsync(
+            cancellationToken
+        );
 
-        Machine machine = await _machineProvider.GetMachineAsync(cancellationToken);
+        List<string> descriptions = new();
 
-        if (machine.Status == MachineStatus.Alarm)
+        foreach (Machine machine in machines)
         {
-            _logger.LogWarning("Machine {MachineId} is in alarm state.", machine.Id);
+            if (machine.Status == MachineStatus.Alarm)
+            {
+                _logger.LogWarning("Machine {MachineId} is in alarm state.", machine.Id);
+            }
+            else if (machine.Status == MachineStatus.Offline)
+            {
+                _logger.LogWarning("Machine {MachineId} is offline.", machine.Id);
+            }
 
-            throw new InvalidMachineStateException($"Machine {machine.Id} is in alarm state.");
+            string description = _machineFormatter.Format(machine);
+
+            descriptions.Add(description);
         }
-        else if (machine.Status == MachineStatus.Offline)
-        {
-            _logger.LogWarning("Machine {MachineId} is offline.", machine.Id);
-        }
+
+        return descriptions;
+    }
+
+    public string GetDetailedMachineDescription(Machine machine)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
 
         return _machineFormatter.FormatDetailed(machine);
+    }
+
+    public async Task<IReadOnlyCollection<string>> GetDetailedMachineDescriptionsAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        _logger.LogDebug("Retrieving machines asynchronously for detailed descriptions.");
+
+        IReadOnlyCollection<Machine> machines = await _machineProvider.GetMachinesAsync(
+            cancellationToken
+        );
+
+        List<string> descriptions = new();
+
+        foreach (Machine machine in machines)
+        {
+            if (machine.Status == MachineStatus.Alarm)
+            {
+                _logger.LogWarning("Machine {MachineId} is in alarm state.", machine.Id);
+            }
+            else if (machine.Status == MachineStatus.Offline)
+            {
+                _logger.LogWarning("Machine {MachineId} is offline.", machine.Id);
+            }
+
+            string description = _machineFormatter.FormatDetailed(machine);
+
+            descriptions.Add(description);
+        }
+
+        return descriptions;
     }
 }

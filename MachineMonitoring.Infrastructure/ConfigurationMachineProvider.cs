@@ -28,13 +28,13 @@ public class ConfigurationMachineProvider : IMachineProvider
         _logger = logger;
     }
 
-    public async Task<Machine> GetMachineAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyCollection<Machine>> GetMachinesAsync(
+        CancellationToken cancellationToken
+    )
     {
-        _logger.LogDebug("Starting asynchronous retrieval of machine {MachineId}.", _options.Id);
-
         await Task.Delay(millisecondsDelay: 500, cancellationToken);
 
-        Machine machine = new Machine(
+        Machine machine = new(
             id: _options.Id,
             name: _options.Name,
             status: _options.Status!.Value,
@@ -42,12 +42,6 @@ public class ConfigurationMachineProvider : IMachineProvider
             serialNumber: _options.SerialNumber
         );
 
-        _logger.LogInformation(
-            "Machine {MachineId} named {MachineName} loaded asynchronously.",
-            machine.Id,
-            machine.Name
-        );
-
-        return machine;
+        return new List<Machine> { machine };
     }
 }
