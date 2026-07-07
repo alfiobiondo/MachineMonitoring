@@ -22,4 +22,7 @@ public class MachineOptions
 
     [Required]
     public string Location { get; set; } = string.Empty;
+
+    [Required]
+    public string SerialNumber { get; set; } = string.Empty;
 }

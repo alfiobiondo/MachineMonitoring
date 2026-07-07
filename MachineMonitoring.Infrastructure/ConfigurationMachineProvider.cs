@@ -38,7 +38,8 @@ public class ConfigurationMachineProvider : IMachineProvider
             id: _options.Id,
             name: _options.Name,
             status: _options.Status!.Value,
-            location: _options.Location
+            location: _options.Location,
+            serialNumber: _options.SerialNumber
         );
 
         _logger.LogInformation(

@@ -17,7 +17,8 @@ public class FixedMachineProvider : IMachineProvider
             id: "M-002",
             name: "Tube Bender",
             status: MachineStatus.Idle,
-            location: "Production Hall B"
+            location: "Production Hall B",
+            serialNumber: "SN-2026-002"
         );
 
         return Task.FromResult(machine);

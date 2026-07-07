@@ -8,11 +8,20 @@ public class Machine
 
     public string Location { get; }
 
-    public Machine(string id, string name, MachineStatus status, string location)
+    public string SerialNumber { get; }
+
+    public Machine(
+        string id,
+        string name,
+        MachineStatus status,
+        string location,
+        string serialNumber
+    )
     {
         Id = id;
         Name = name;
         Status = status;
         Location = location;
+        SerialNumber = serialNumber;
     }
 }

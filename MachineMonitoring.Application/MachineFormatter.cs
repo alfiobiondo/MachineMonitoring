@@ -28,7 +28,7 @@ public class MachineFormatter
     {
         _logger.LogDebug("Formatting detailed description for machine {MachineId}.", machine.Id);
 
-        return $"Machine {machine.Id} named \"{machine.Name}\" "
+        return $"Machine {machine.Id} ({machine.SerialNumber}) named \"{machine.Name}\" "
             + $"is currently {machine.Status} in {machine.Location}.";
     }
 }

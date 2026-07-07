@@ -12,11 +12,17 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(
     new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory }
 );
 
+// builder
+//     .Services.AddOptions<MachineOptions>()
+//     .Bind(builder.Configuration.GetSection(MachineOptions.SectionName))
+//     .ValidateDataAnnotations()
+//     .Validate(options => options.Id.StartsWith("M-", StringComparison.OrdinalIgnoreCase))
+//     .ValidateOnStart();
+
 builder
-    .Services.AddOptions<MachineOptions>()
-    .Bind(builder.Configuration.GetSection(MachineOptions.SectionName))
+    .Services.AddOptions<MachineDataOptions>()
+    .Bind(builder.Configuration.GetSection(MachineDataOptions.SectionName))
     .ValidateDataAnnotations()
-    .Validate(options => options.Id.StartsWith("M-", StringComparison.OrdinalIgnoreCase))
     .ValidateOnStart();
 
 builder
@@ -25,7 +31,7 @@ builder
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-builder.Services.AddTransient<IMachineProvider, ConfigurationMachineProvider>();
+builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 builder.Services.AddTransient<MachineFormatter>();
 builder.Services.AddTransient<MachineManager>();
 builder.Services.AddTransient<MachineReporter>();
