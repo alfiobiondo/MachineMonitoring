@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using MachineMonitoring.Application.Diagnostics;
+using MachineMonitoring.Application.Exceptions;
 using MachineMonitoring.Application.Reports;
 using MachineMonitoring.Domain;
 using Microsoft.Extensions.Logging;
@@ -8,20 +11,25 @@ public class MachineManager
 {
     private readonly IMachineProvider _machineProvider;
     private readonly MachineFormatter _machineFormatter;
+
+    private readonly MachineDiagnosticService _machineDiagnosticService;
     private readonly ILogger<MachineManager> _logger;
 
     public MachineManager(
         IMachineProvider machineProvider,
         MachineFormatter machineFormatter,
+        MachineDiagnosticService machineDiagnosticService,
         ILogger<MachineManager> logger
     )
     {
         ArgumentNullException.ThrowIfNull(machineProvider);
         ArgumentNullException.ThrowIfNull(machineFormatter);
+        ArgumentNullException.ThrowIfNull(machineDiagnosticService);
         ArgumentNullException.ThrowIfNull(logger);
 
         _machineProvider = machineProvider;
         _machineFormatter = machineFormatter;
+        _machineDiagnosticService = machineDiagnosticService;
         _logger = logger;
     }
 
@@ -110,23 +118,17 @@ public class MachineManager
             .ThenBy(machine => machine.Id)
             .ToList();
 
-        List<string> descriptions = new();
+        Task<MachineReportItem>[] itemTasks = orderedMachines
+            .Select(machine => CreateReportItemAsync(machine, cancellationToken))
+            .ToArray();
 
-        foreach (Machine machine in orderedMachines)
-        {
-            LogAbnormalStatus(machine);
-
-            string description = _machineFormatter.FormatDetailed(machine);
-
-            descriptions.Add(description);
-        }
+        MachineReportItem[] items = await Task.WhenAll(itemTasks);
 
         MachineStatusSummary statusSummary = CreateStatusSummary(machines);
 
         MachineReport report = new(
             generatedAt: DateTimeOffset.Now,
-            machines: orderedMachines,
-            descriptions: descriptions,
+            items: items,
             statusSummary: statusSummary
         );
 
@@ -165,9 +167,54 @@ public class MachineManager
         {
             MachineStatus.Alarm => 1,
             MachineStatus.Offline => 2,
-            MachineStatus.Idle => 3,
-            MachineStatus.Running => 4,
-            _ => 5,
+            MachineStatus.Maintenance => 3,
+            MachineStatus.Idle => 4,
+            MachineStatus.Running => 5,
+            _ => 6,
         };
+    }
+
+    private async Task<MachineReportItem> CreateReportItemAsync(
+        Machine machine,
+        CancellationToken cancellationToken
+    )
+    {
+        LogAbnormalStatus(machine);
+
+        string description = _machineFormatter.FormatDetailed(machine);
+
+        try
+        {
+            MachineDiagnostic diagnostic = await _machineDiagnosticService.GetDiagnosticAsync(
+                machine,
+                cancellationToken
+            );
+
+            return new MachineReportItem(
+                machine: machine,
+                description: description,
+                diagnostic: diagnostic,
+                diagnosticError: null
+            );
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (MachineDiagnosticUnavailableException exception)
+        {
+            _logger.LogError(
+                exception,
+                "Diagnostic retrieval failed for machine {MachineId}.",
+                machine.Id
+            );
+
+            return new MachineReportItem(
+                machine: machine,
+                description: description,
+                diagnostic: null,
+                diagnosticError: "Diagnostic information is unavailable."
+            );
+        }
     }
 }

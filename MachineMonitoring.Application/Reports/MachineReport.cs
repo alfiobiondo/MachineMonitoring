@@ -1,37 +1,27 @@
-using MachineMonitoring.Domain;
-
 namespace MachineMonitoring.Application.Reports;
 
 public class MachineReport
 {
     public DateTimeOffset GeneratedAt { get; }
 
-    public IReadOnlyCollection<Machine> Machines { get; }
-
-    public IReadOnlyCollection<string> Descriptions { get; }
+    public IReadOnlyCollection<MachineReportItem> Items { get; }
 
     public MachineStatusSummary StatusSummary { get; }
 
+    public int SuccessfulDiagnosticCount => Items.Count(item => item.HasDiagnostic);
+
+    public int FailedDiagnosticCount => Items.Count(item => !item.HasDiagnostic);
+
     public MachineReport(
         DateTimeOffset generatedAt,
-        IReadOnlyCollection<Machine> machines,
-        IReadOnlyCollection<string> descriptions,
+        IReadOnlyCollection<MachineReportItem> items,
         MachineStatusSummary statusSummary
     )
     {
-        ArgumentNullException.ThrowIfNull(machines);
-        ArgumentNullException.ThrowIfNull(descriptions);
+        ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(statusSummary);
 
-        if (machines.Count != descriptions.Count)
-        {
-            throw new ArgumentException(
-                "Each machine must have a corresponding description.",
-                nameof(descriptions)
-            );
-        }
-
-        if (statusSummary.TotalCount != machines.Count)
+        if (statusSummary.TotalCount != items.Count)
         {
             throw new ArgumentException(
                 "The status summary does not match the machine collection.",
@@ -40,8 +30,7 @@ public class MachineReport
         }
 
         GeneratedAt = generatedAt;
-        Machines = machines;
-        Descriptions = descriptions;
+        Items = items;
         StatusSummary = statusSummary;
     }
 }

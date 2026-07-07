@@ -82,12 +82,21 @@ public class MachinePollingService
     private static void PrintReport(MachineReport report)
     {
         Console.WriteLine(
-            $"[{report.GeneratedAt:HH:mm:ss}] " + $"{report.Machines.Count} machines retrieved."
+            $"[{report.GeneratedAt:HH:mm:ss}] " + $"{report.Items.Count} machines retrieved."
         );
 
-        foreach (string description in report.Descriptions)
+        foreach (MachineReportItem item in report.Items)
         {
-            Console.WriteLine($"- {description}");
+            Console.WriteLine($"- {item.Description}");
+
+            if (item.Diagnostic is not null)
+            {
+                Console.WriteLine($"  Diagnostic: {item.Diagnostic.Message}");
+            }
+            else
+            {
+                Console.WriteLine($"  Diagnostic error: {item.DiagnosticError}");
+            }
         }
 
         MachineStatusSummary summary = report.StatusSummary;
@@ -98,5 +107,11 @@ public class MachinePollingService
         );
 
         Console.WriteLine($"Status summary ({summary.TotalCount} total): " + statusText);
+
+        Console.WriteLine(
+            $"Diagnostics: "
+                + $"Successful={report.SuccessfulDiagnosticCount}, "
+                + $"Failed={report.FailedDiagnosticCount}"
+        );
     }
 }
