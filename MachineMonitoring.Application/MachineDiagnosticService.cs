@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace MachineMonitoring.Application;
 
-public class MachineDiagnosticService
+public class MachineDiagnosticService : IMachineDiagnosticService
 {
     private readonly ILogger<MachineDiagnosticService> _logger;
 

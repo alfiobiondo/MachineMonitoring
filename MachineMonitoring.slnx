@@ -3,4 +3,5 @@
   <Project Path="MachineMonitoring.Console/MachineMonitoring.Console.csproj" />
   <Project Path="MachineMonitoring.Domain/MachineMonitoring.Domain.csproj" />
   <Project Path="MachineMonitoring.Infrastructure/MachineMonitoring.Infrastructure.csproj" />
+  <Project Path="MachineMonitoring.Tests/MachineMonitoring.Tests.csproj" />
 </Solution>

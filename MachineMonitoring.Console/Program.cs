@@ -36,7 +36,7 @@ builder.Services.AddTransient<MachineFormatter>();
 builder.Services.AddTransient<MachineManager>();
 builder.Services.AddTransient<MachineReporter>();
 builder.Services.AddTransient<MachinePollingService>();
-builder.Services.AddTransient<MachineDiagnosticService>();
+builder.Services.AddTransient<IMachineDiagnosticService, MachineDiagnosticService>();
 
 builder.Services.AddHostedService<MachinePollingWorker>();
 

@@ -12,13 +12,13 @@ public class MachineManager
     private readonly IMachineProvider _machineProvider;
     private readonly MachineFormatter _machineFormatter;
 
-    private readonly MachineDiagnosticService _machineDiagnosticService;
+    private readonly IMachineDiagnosticService _machineDiagnosticService;
     private readonly ILogger<MachineManager> _logger;
 
     public MachineManager(
         IMachineProvider machineProvider,
         MachineFormatter machineFormatter,
-        MachineDiagnosticService machineDiagnosticService,
+        IMachineDiagnosticService machineDiagnosticService,
         ILogger<MachineManager> logger
     )
     {
