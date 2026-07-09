@@ -23,8 +23,16 @@ public class MachineStatusSummaryTests
         Assert.Equal(4, summary.TotalCount);
     }
 
-    [Fact]
-    public void GetCount_WhenStatusExists_ShouldReturnItsCount()
+    [Theory]
+    [InlineData(MachineStatus.Running, 3)]
+    [InlineData(MachineStatus.Offline, 1)]
+    [InlineData(MachineStatus.Idle, 0)]
+    [InlineData(MachineStatus.Alarm, 0)]
+    [InlineData(MachineStatus.Maintenance, 0)]
+    public void GetCount_WithDifferentStatuses_ShouldReturnExpectedCount(
+        MachineStatus status,
+        int expectedCount
+    )
     {
         // Arrange
         Dictionary<MachineStatus, int> counts = new()
@@ -36,25 +44,10 @@ public class MachineStatusSummaryTests
         MachineStatusSummary summary = new(counts);
 
         // Act
-        int runningCount = summary.GetCount(MachineStatus.Running);
+        int actualCount = summary.GetCount(status);
 
         // Assert
-        Assert.Equal(3, runningCount);
-    }
-
-    [Fact]
-    public void GetCount_WhenStatusIsMissing_ShouldReturnZero()
-    {
-        // Arrange
-        Dictionary<MachineStatus, int> counts = new() { [MachineStatus.Running] = 2 };
-
-        MachineStatusSummary summary = new(counts);
-
-        // Act
-        int alarmCount = summary.GetCount(MachineStatus.Alarm);
-
-        // Assert
-        Assert.Equal(0, alarmCount);
+        Assert.Equal(expectedCount, actualCount);
     }
 
     [Fact]
@@ -84,4 +77,40 @@ public class MachineStatusSummaryTests
         // Assert
         Assert.Equal("counts", exception.ParamName);
     }
+
+    [Theory]
+    [MemberData(nameof(TotalCountData))]
+    public void Constructor_WithDifferentCounts_ShouldCalculateTotal(
+        IReadOnlyDictionary<MachineStatus, int> counts,
+        int expectedTotal
+    )
+    {
+        // Act
+        MachineStatusSummary summary = new(counts);
+
+        // Assert
+        Assert.Equal(expectedTotal, summary.TotalCount);
+    }
+
+    public static TheoryData<IReadOnlyDictionary<MachineStatus, int>, int> TotalCountData =>
+        new()
+        {
+            {
+                new Dictionary<MachineStatus, int>
+                {
+                    [MachineStatus.Running] = 2,
+                    [MachineStatus.Idle] = 1,
+                },
+                3
+            },
+            {
+                new Dictionary<MachineStatus, int>
+                {
+                    [MachineStatus.Alarm] = 4,
+                    [MachineStatus.Maintenance] = 2,
+                },
+                6
+            },
+            { new Dictionary<MachineStatus, int>(), 0 },
+        };
 }

@@ -22,5 +22,6 @@
   <ItemGroup>
     <ProjectReference Include="../MachineMonitoring.Domain/MachineMonitoring.Domain.csproj" />
     <ProjectReference Include="..\MachineMonitoring.Application\MachineMonitoring.Application.csproj" />
+    <ProjectReference Include="..\MachineMonitoring.Infrastructure\MachineMonitoring.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
