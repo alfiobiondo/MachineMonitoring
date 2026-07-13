@@ -14,6 +14,13 @@ public sealed class Material
 
     public bool IsEnabled { get; private set; }
 
+    private Material()
+    {
+        Code = null!;
+        Name = null!;
+        Grade = null!;
+    }
+
     public Material(Guid id, string code, string name, MaterialCategory category, string grade)
     {
         if (id == Guid.Empty)

@@ -16,6 +16,11 @@ public sealed class Nozzle
 
     public decimal WearPercentage { get; private set; }
 
+    private Nozzle()
+    {
+        Code = null!;
+    }
+
     public Nozzle(
         Guid id,
         string code,

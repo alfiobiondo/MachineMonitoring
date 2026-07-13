@@ -6,7 +6,11 @@ using MachineMonitoring.Console;
 using MachineMonitoring.Domain.Technology;
 using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
+using MachineMonitoring.Infrastructure.Persistence;
+using MachineMonitoring.Infrastructure.Persistence.Repositories;
 using MachineMonitoring.Infrastructure.Production.InMemory;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,12 +56,25 @@ builder
 
 builder.Services.AddMemoryCache();
 
+string connectionString =
+    builder.Configuration.GetConnectionString("MachineMonitoring")
+    ?? throw new InvalidOperationException("Connection string 'MachineMonitoring' was not found.");
+
+builder.Services.AddDbContext<MachineMonitoringDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+
+builder.Services.AddScoped<ProductionDatabaseSeeder>();
+
 // Monitoraggio macchine
 builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 
 builder.Services.AddTransient<MachineFormatter>();
+
 builder.Services.AddTransient<MachineManager>();
+
 builder.Services.AddTransient<MachineReporter>();
+
 builder.Services.AddTransient<MachinePollingService>();
 
 builder.Services.AddHostedService<MachinePollingWorker>();
@@ -78,12 +95,14 @@ builder.Services.AddSingleton<
 
 builder.Services.AddSingleton<IMachineDiagnosticService, CachedMachineDiagnosticService>();
 
-// Catalogo produttivo in memoria
+// Catalogo produttivo ancora necessario per
+// i repository che restano in-memory.
 builder.Services.AddSingleton<InMemoryProductionCatalog>();
 
-// Repository produttivi in memoria
-builder.Services.AddSingleton<IMaterialRepository, InMemoryMaterialRepository>();
+// Materiale: ora letto da PostgreSQL.
+builder.Services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 
+// Gli altri repository restano temporaneamente in-memory.
 builder.Services.AddSingleton<INozzleRepository, InMemoryNozzleRepository>();
 
 builder.Services.AddSingleton<IDrawingFileRepository, InMemoryDrawingFileRepository>();
@@ -98,10 +117,16 @@ builder.Services.AddSingleton<IMachineOperationRepository, InMemoryMachineOperat
 // Dominio e application service produttivo
 builder.Services.AddSingleton<LaserCutConfigurationValidator>();
 
-builder.Services.AddSingleton<MachineOperationApplicationService>();
+/*
+ * Deve essere Scoped perché dipende da IMaterialRepository,
+ * che ora è Scoped e usa MachineMonitoringDbContext.
+ */
+builder.Services.AddScoped<MachineOperationApplicationService>();
 
-// Deve essere registrato PRIMA di Build()
 builder.Services.AddTransient<ProductionDemoService>();
+
+// Servizio temporaneo usato soltanto per la lezione sul tracking.
+builder.Services.AddScoped<MaterialTrackingDemoService>();
 
 using IHost host = builder.Build();
 
@@ -111,7 +136,42 @@ ILogger logger = host
 
 try
 {
-    // Esegue una volta la dimostrazione produttiva
+    /*
+     * Scope 1: seeding.
+     *
+     * Il DbContext usato dal seeder viene eliminato alla fine
+     * di questo blocco.
+     */
+    using (IServiceScope scope = host.Services.CreateScope())
+    {
+        ProductionDatabaseSeeder seeder =
+            scope.ServiceProvider.GetRequiredService<ProductionDatabaseSeeder>();
+
+        await seeder.SeedAsync(CancellationToken.None);
+    }
+
+    /*
+     * Scope 2: esperimento tracking/no tracking.
+     *
+     * Viene creato un nuovo DbContext con un Change Tracker
+     * inizialmente vuoto.
+     */
+    using (IServiceScope scope = host.Services.CreateScope())
+    {
+        MaterialTrackingDemoService trackingDemo =
+            scope.ServiceProvider.GetRequiredService<MaterialTrackingDemoService>();
+
+        await trackingDemo.RunAsync(CancellationToken.None);
+    }
+
+    /*
+     * Scope 3: demo produttiva.
+     *
+     * ProductionDemoService risolve:
+     * - MachineOperationApplicationService scoped;
+     * - PostgresMaterialRepository scoped;
+     * - MachineMonitoringDbContext scoped.
+     */
     using (IServiceScope scope = host.Services.CreateScope())
     {
         ProductionDemoService demoService =
@@ -120,7 +180,7 @@ try
         await demoService.RunAsync(CancellationToken.None);
     }
 
-    // Avvia il Generic Host e il worker
+    // Avvia il Generic Host e il worker.
     await host.RunAsync();
 }
 catch (OperationCanceledException)
