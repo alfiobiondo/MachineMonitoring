@@ -1,7 +1,8 @@
 ﻿using MachineMonitoring.Application;
 using MachineMonitoring.Application.Configuration;
-using MachineMonitoring.Application.Exceptions;
+using MachineMonitoring.Application.Production;
 using MachineMonitoring.Console;
+using MachineMonitoring.Domain.Technology;
 using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,13 +12,6 @@ using Microsoft.Extensions.Logging;
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(
     new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory }
 );
-
-// builder
-//     .Services.AddOptions<MachineOptions>()
-//     .Bind(builder.Configuration.GetSection(MachineOptions.SectionName))
-//     .ValidateDataAnnotations()
-//     .Validate(options => options.Id.StartsWith("M-", StringComparison.OrdinalIgnoreCase))
-//     .ValidateOnStart();
 
 builder
     .Services.AddOptions<MachineDataOptions>()
@@ -56,6 +50,9 @@ builder.Services.AddTransient<MachineFormatter>();
 builder.Services.AddTransient<MachineManager>();
 builder.Services.AddTransient<MachineReporter>();
 builder.Services.AddTransient<MachinePollingService>();
+builder.Services.AddTransient<LaserCutConfigurationValidator>();
+
+builder.Services.AddTransient<MachineOperationApplicationService>();
 
 builder.Services.AddHostedService<MachinePollingWorker>();
 
