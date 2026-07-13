@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace MachineMonitoring.Application;
 
-public class MachineDiagnosticService : IMachineDiagnosticService
+public class MachineDiagnosticService : IRawMachineDiagnosticService
 {
     private readonly ILogger<MachineDiagnosticService> _logger;
 
@@ -23,9 +23,19 @@ public class MachineDiagnosticService : IMachineDiagnosticService
     {
         ArgumentNullException.ThrowIfNull(machine);
 
-        _logger.LogDebug("Retrieving diagnostic information for machine {MachineId}.", machine.Id);
+        _logger.LogDebug("Diagnostic retrieval started for machine {MachineId}.", machine.Id);
 
-        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+        int delayMilliseconds = machine.Id switch
+        {
+            "M-001" => 1200,
+            "M-002" => 300,
+            "M-003" => 900,
+            "M-004" => 600,
+            "M-005" => 500,
+            _ => 700,
+        };
+
+        await Task.Delay(delayMilliseconds, cancellationToken);
 
         string message = machine.Status switch
         {
@@ -41,6 +51,8 @@ public class MachineDiagnosticService : IMachineDiagnosticService
 
             _ => "Machine status is unknown.",
         };
+
+        _logger.LogDebug("Diagnostic retrieval completed for machine {MachineId}.", machine.Id);
 
         return new MachineDiagnostic(
             machineId: machine.Id,

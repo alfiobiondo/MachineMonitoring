@@ -31,14 +31,33 @@ builder
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder
+    .Services.AddOptions<DiagnosticOptions>()
+    .Bind(builder.Configuration.GetSection(DiagnosticOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder
+    .Services.AddOptions<DiagnosticRetryOptions>()
+    .Bind(builder.Configuration.GetSection(DiagnosticRetryOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 builder.Services.AddTransient<MachineFormatter>();
 builder.Services.AddTransient<MachineManager>();
 builder.Services.AddTransient<MachineReporter>();
 builder.Services.AddTransient<MachinePollingService>();
-builder.Services.AddTransient<IMachineDiagnosticService, MachineDiagnosticService>();
 
 builder.Services.AddHostedService<MachinePollingWorker>();
+
+builder.Services.AddSingleton<IRawMachineDiagnosticService, MachineDiagnosticService>();
+builder.Services.AddSingleton<
+    ILimitedMachineDiagnosticService,
+    LimitedConcurrencyMachineDiagnosticService
+>();
+
+builder.Services.AddSingleton<IMachineDiagnosticService, RetryingMachineDiagnosticService>();
 
 using IHost host = builder.Build();
 
