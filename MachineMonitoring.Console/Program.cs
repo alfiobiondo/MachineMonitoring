@@ -43,6 +43,14 @@ builder
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder
+    .Services.AddOptions<DiagnosticCacheOptions>()
+    .Bind(builder.Configuration.GetSection(DiagnosticCacheOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddMemoryCache();
+
 builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 builder.Services.AddTransient<MachineFormatter>();
 builder.Services.AddTransient<MachineManager>();
@@ -56,8 +64,11 @@ builder.Services.AddSingleton<
     ILimitedMachineDiagnosticService,
     LimitedConcurrencyMachineDiagnosticService
 >();
-
-builder.Services.AddSingleton<IMachineDiagnosticService, RetryingMachineDiagnosticService>();
+builder.Services.AddSingleton<
+    IRetryingMachineDiagnosticService,
+    RetryingMachineDiagnosticService
+>();
+builder.Services.AddSingleton<IMachineDiagnosticService, CachedMachineDiagnosticService>();
 
 using IHost host = builder.Build();
 

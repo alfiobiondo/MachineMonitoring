@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace MachineMonitoring.Application;
 
-public sealed class RetryingMachineDiagnosticService : IMachineDiagnosticService
+public sealed class RetryingMachineDiagnosticService : IRetryingMachineDiagnosticService
 {
     private readonly ILimitedMachineDiagnosticService _innerService;
     private readonly DiagnosticRetryOptions _options;
