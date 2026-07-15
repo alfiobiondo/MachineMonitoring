@@ -97,22 +97,19 @@ builder.Services.AddSingleton<IMachineDiagnosticService, CachedMachineDiagnostic
 
 // Catalogo produttivo ancora necessario per
 // i repository che restano in-memory.
-builder.Services.AddSingleton<InMemoryProductionCatalog>();
+// builder.Services.AddSingleton<InMemoryProductionCatalog>();
 
 // Materiale: ora letto da PostgreSQL.
 builder.Services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 
 // Gli altri repository restano temporaneamente in-memory.
-builder.Services.AddSingleton<INozzleRepository, InMemoryNozzleRepository>();
+builder.Services.AddScoped<INozzleRepository, PostgresNozzleRepository>();
 
-builder.Services.AddSingleton<IDrawingFileRepository, InMemoryDrawingFileRepository>();
+builder.Services.AddScoped<IDrawingFileRepository, PostgresDrawingFileRepository>();
 
-builder.Services.AddSingleton<
-    IMachineCapabilitiesRepository,
-    InMemoryMachineCapabilitiesRepository
->();
+builder.Services.AddScoped<IMachineCapabilitiesRepository, PostgresMachineCapabilitiesRepository>();
 
-builder.Services.AddSingleton<IMachineOperationRepository, InMemoryMachineOperationRepository>();
+builder.Services.AddScoped<IMachineOperationRepository, PostgresMachineOperationRepository>();
 
 // Dominio e application service produttivo
 builder.Services.AddSingleton<LaserCutConfigurationValidator>();
@@ -124,9 +121,6 @@ builder.Services.AddSingleton<LaserCutConfigurationValidator>();
 builder.Services.AddScoped<MachineOperationApplicationService>();
 
 builder.Services.AddTransient<ProductionDemoService>();
-
-// Servizio temporaneo usato soltanto per la lezione sul tracking.
-builder.Services.AddScoped<MaterialTrackingDemoService>();
 
 using IHost host = builder.Build();
 
@@ -148,20 +142,6 @@ try
             scope.ServiceProvider.GetRequiredService<ProductionDatabaseSeeder>();
 
         await seeder.SeedAsync(CancellationToken.None);
-    }
-
-    /*
-     * Scope 2: esperimento tracking/no tracking.
-     *
-     * Viene creato un nuovo DbContext con un Change Tracker
-     * inizialmente vuoto.
-     */
-    using (IServiceScope scope = host.Services.CreateScope())
-    {
-        MaterialTrackingDemoService trackingDemo =
-            scope.ServiceProvider.GetRequiredService<MaterialTrackingDemoService>();
-
-        await trackingDemo.RunAsync(CancellationToken.None);
     }
 
     /*

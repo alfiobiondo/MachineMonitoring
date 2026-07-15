@@ -163,4 +163,36 @@ public sealed class MachineOperation
 
         Status = MachineOperationStatus.Cancelled;
     }
+
+    public static MachineOperation Restore(
+        Guid id,
+        Guid workpieceId,
+        string machineId,
+        MachineOperationType type,
+        MachineOperationStatus status,
+        int progressPercentage,
+        string? currentPhase,
+        string? failureReason,
+        DateTimeOffset createdAt,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? completedAt
+    )
+    {
+        MachineOperation operation = new(
+            id: id,
+            workpieceId: workpieceId,
+            machineId: machineId,
+            type: type,
+            createdAt: createdAt
+        );
+
+        operation.Status = status;
+        operation.ProgressPercentage = progressPercentage;
+        operation.CurrentPhase = currentPhase;
+        operation.FailureReason = failureReason;
+        operation.StartedAt = startedAt;
+        operation.CompletedAt = completedAt;
+
+        return operation;
+    }
 }

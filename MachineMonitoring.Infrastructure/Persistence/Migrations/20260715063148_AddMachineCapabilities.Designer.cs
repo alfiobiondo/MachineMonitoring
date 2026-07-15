@@ -3,6 +3,7 @@ using System;
 using MachineMonitoring.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MachineMonitoring.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MachineMonitoringDbContext))]
-    partial class MachineMonitoringDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715063148_AddMachineCapabilities")]
+    partial class AddMachineCapabilities
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -158,108 +161,6 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.ToTable("nozzles", (string)null);
                 });
 
-            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.LaserCutConfigurationRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AssistGas")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("assist_gas");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<decimal>("CuttingSpeedMillimetersPerMinute")
-                        .HasPrecision(12, 3)
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("cutting_speed_millimeters_per_minute");
-
-                    b.Property<Guid>("DrawingFileId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("drawing_file_id");
-
-                    b.Property<decimal>("FocalOffsetMillimeters")
-                        .HasPrecision(10, 3)
-                        .HasColumnType("numeric(10,3)")
-                        .HasColumnName("focal_offset_millimeters");
-
-                    b.Property<decimal>("GasPressureBar")
-                        .HasPrecision(10, 3)
-                        .HasColumnType("numeric(10,3)")
-                        .HasColumnName("gas_pressure_bar");
-
-                    b.Property<string>("GeometryType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("geometry_type");
-
-                    b.Property<decimal>("LaserPowerWatts")
-                        .HasPrecision(12, 3)
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("laser_power_watts");
-
-                    b.Property<Guid>("MaterialId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("material_id");
-
-                    b.Property<Guid>("NozzleId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("nozzle_id");
-
-                    b.Property<int>("NumberOfPasses")
-                        .HasColumnType("integer")
-                        .HasColumnName("number_of_passes");
-
-                    b.Property<Guid>("OperationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("operation_id");
-
-                    b.Property<decimal?>("SheetHeightMillimeters")
-                        .HasPrecision(12, 3)
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("sheet_height_millimeters");
-
-                    b.Property<decimal?>("SheetWidthMillimeters")
-                        .HasPrecision(12, 3)
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("sheet_width_millimeters");
-
-                    b.Property<decimal>("ThicknessMillimeters")
-                        .HasPrecision(10, 3)
-                        .HasColumnType("numeric(10,3)")
-                        .HasColumnName("thickness_millimeters");
-
-                    b.Property<decimal?>("TubeLengthMillimeters")
-                        .HasPrecision(12, 3)
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("tube_length_millimeters");
-
-                    b.Property<decimal?>("TubeOuterDiameterMillimeters")
-                        .HasPrecision(10, 3)
-                        .HasColumnType("numeric(10,3)")
-                        .HasColumnName("tube_outer_diameter_millimeters");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DrawingFileId");
-
-                    b.HasIndex("MaterialId");
-
-                    b.HasIndex("NozzleId");
-
-                    b.HasIndex("OperationId")
-                        .IsUnique();
-
-                    b.ToTable("laser_cut_configurations", (string)null);
-                });
-
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", b =>
                 {
                     b.Property<string>("MachineId")
@@ -359,99 +260,6 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.ToTable("machine_capability_nozzles", (string)null);
                 });
 
-            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("completed_at");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("CurrentPhase")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("current_phase");
-
-                    b.Property<string>("FailureReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("failure_reason");
-
-                    b.Property<string>("MachineId")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("machine_id");
-
-                    b.Property<int>("ProgressPercentage")
-                        .HasColumnType("integer")
-                        .HasColumnName("progress_percentage");
-
-                    b.Property<DateTimeOffset?>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("status");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("type");
-
-                    b.Property<Guid>("WorkpieceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workpiece_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MachineId");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("machine_operations", (string)null);
-                });
-
-            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.LaserCutConfigurationRecord", b =>
-                {
-                    b.HasOne("MachineMonitoring.Domain.Technology.DrawingFile", null)
-                        .WithMany()
-                        .HasForeignKey("DrawingFileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MachineMonitoring.Domain.Technology.Material", null)
-                        .WithMany()
-                        .HasForeignKey("MaterialId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MachineMonitoring.Domain.Technology.Nozzle", null)
-                        .WithMany()
-                        .HasForeignKey("NozzleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", "Operation")
-                        .WithOne("LaserCutConfiguration")
-                        .HasForeignKey("MachineMonitoring.Infrastructure.Persistence.Models.LaserCutConfigurationRecord", "OperationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Operation");
-                });
-
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilityGeometryTypeRecord", b =>
                 {
                     b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", "MachineCapabilities")
@@ -498,11 +306,6 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("SupportedMaterialCategories");
 
                     b.Navigation("SupportedNozzles");
-                });
-
-            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
-                {
-                    b.Navigation("LaserCutConfiguration");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,4 +1,6 @@
+using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
+using MachineMonitoring.Infrastructure.Persistence.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace MachineMonitoring.Infrastructure.Persistence;
@@ -6,8 +8,18 @@ namespace MachineMonitoring.Infrastructure.Persistence;
 public sealed class MachineMonitoringDbContext : DbContext
 {
     public DbSet<Material> Materials => Set<Material>();
-
     public DbSet<Nozzle> Nozzles => Set<Nozzle>();
+    public DbSet<DrawingFile> DrawingFiles => Set<DrawingFile>();
+    public DbSet<MachineCapabilitiesRecord> MachineCapabilities => Set<MachineCapabilitiesRecord>();
+    public DbSet<MachineCapabilityMaterialCategoryRecord> MachineCapabilityMaterialCategories =>
+        Set<MachineCapabilityMaterialCategoryRecord>();
+    public DbSet<MachineCapabilityNozzleRecord> MachineCapabilityNozzles =>
+        Set<MachineCapabilityNozzleRecord>();
+    public DbSet<MachineCapabilityGeometryTypeRecord> MachineCapabilityGeometryTypes =>
+        Set<MachineCapabilityGeometryTypeRecord>();
+    public DbSet<MachineOperationRecord> MachineOperations => Set<MachineOperationRecord>();
+    public DbSet<LaserCutConfigurationRecord> LaserCutConfigurations =>
+        Set<LaserCutConfigurationRecord>();
 
     public MachineMonitoringDbContext(DbContextOptions<MachineMonitoringDbContext> options)
         : base(options) { }
@@ -18,6 +30,10 @@ public sealed class MachineMonitoringDbContext : DbContext
 
         ConfigureMaterial(modelBuilder);
         ConfigureNozzle(modelBuilder);
+        ConfigureDrawingFile(modelBuilder);
+        ConfigureMachineCapabilities(modelBuilder);
+        ConfigureMachineOperation(modelBuilder);
+        ConfigureLaserCutConfiguration(modelBuilder);
     }
 
     private static void ConfigureMaterial(ModelBuilder modelBuilder)
@@ -111,6 +127,371 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .HasColumnName("wear_percentage")
                 .HasPrecision(5, 2)
                 .IsRequired();
+        });
+    }
+
+    private static void ConfigureDrawingFile(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DrawingFile>(entity =>
+        {
+            entity.ToTable("drawing_files");
+
+            entity.HasKey(drawingFile => drawingFile.Id);
+
+            entity.Property(drawingFile => drawingFile.Id).HasColumnName("id");
+
+            entity
+                .Property(drawingFile => drawingFile.OriginalFileName)
+                .HasColumnName("original_file_name")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity
+                .Property(drawingFile => drawingFile.StoredFileName)
+                .HasColumnName("stored_file_name")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity.HasIndex(drawingFile => drawingFile.StoredFileName).IsUnique();
+
+            entity
+                .Property(drawingFile => drawingFile.ContentType)
+                .HasColumnName("content_type")
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity
+                .Property(drawingFile => drawingFile.SizeBytes)
+                .HasColumnName("size_bytes")
+                .IsRequired();
+
+            entity
+                .Property(drawingFile => drawingFile.Sha256Hash)
+                .HasColumnName("sha256_hash")
+                .HasMaxLength(64)
+                .IsRequired();
+
+            entity
+                .Property(drawingFile => drawingFile.UploadedAt)
+                .HasColumnName("uploaded_at")
+                .IsRequired();
+        });
+    }
+
+    private static void ConfigureMachineCapabilities(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MachineCapabilitiesRecord>(entity =>
+        {
+            entity.ToTable("machine_capabilities");
+
+            entity.HasKey(capabilities => capabilities.MachineId);
+
+            entity
+                .Property(capabilities => capabilities.MachineId)
+                .HasColumnName("machine_id")
+                .HasMaxLength(50);
+
+            entity
+                .Property(capabilities => capabilities.MaximumLaserPowerWatts)
+                .HasColumnName("maximum_laser_power_watts")
+                .HasPrecision(12, 3)
+                .IsRequired();
+
+            entity
+                .Property(capabilities => capabilities.MinimumThicknessMillimeters)
+                .HasColumnName("minimum_thickness_millimeters")
+                .HasPrecision(10, 3)
+                .IsRequired();
+
+            entity
+                .Property(capabilities => capabilities.MaximumThicknessMillimeters)
+                .HasColumnName("maximum_thickness_millimeters")
+                .HasPrecision(10, 3)
+                .IsRequired();
+
+            entity
+                .Property(capabilities => capabilities.MaximumTubeDiameterMillimeters)
+                .HasColumnName("maximum_tube_diameter_millimeters")
+                .HasPrecision(10, 3);
+
+            entity
+                .Property(capabilities => capabilities.MaximumTubeLengthMillimeters)
+                .HasColumnName("maximum_tube_length_millimeters")
+                .HasPrecision(12, 3);
+
+            entity
+                .Property(capabilities => capabilities.MaximumSheetWidthMillimeters)
+                .HasColumnName("maximum_sheet_width_millimeters")
+                .HasPrecision(12, 3);
+
+            entity
+                .Property(capabilities => capabilities.MaximumSheetHeightMillimeters)
+                .HasColumnName("maximum_sheet_height_millimeters")
+                .HasPrecision(12, 3);
+        });
+
+        modelBuilder.Entity<MachineCapabilityMaterialCategoryRecord>(entity =>
+        {
+            entity.ToTable("machine_capability_material_categories");
+
+            entity.HasKey(item => new { item.MachineId, item.MaterialCategory });
+
+            entity.Property(item => item.MachineId).HasColumnName("machine_id").HasMaxLength(50);
+
+            entity
+                .Property(item => item.MaterialCategory)
+                .HasColumnName("material_category")
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            entity
+                .HasOne(item => item.MachineCapabilities)
+                .WithMany(capabilities => capabilities.SupportedMaterialCategories)
+                .HasForeignKey(item => item.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MachineCapabilityNozzleRecord>(entity =>
+        {
+            entity.ToTable("machine_capability_nozzles");
+
+            entity.HasKey(item => new { item.MachineId, item.NozzleId });
+
+            entity.Property(item => item.MachineId).HasColumnName("machine_id").HasMaxLength(50);
+
+            entity.Property(item => item.NozzleId).HasColumnName("nozzle_id");
+
+            entity
+                .HasOne(item => item.MachineCapabilities)
+                .WithMany(capabilities => capabilities.SupportedNozzles)
+                .HasForeignKey(item => item.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity
+                .HasOne<Nozzle>()
+                .WithMany()
+                .HasForeignKey(item => item.NozzleId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MachineCapabilityGeometryTypeRecord>(entity =>
+        {
+            entity.ToTable("machine_capability_geometry_types");
+
+            entity.HasKey(item => new { item.MachineId, item.GeometryType });
+
+            entity.Property(item => item.MachineId).HasColumnName("machine_id").HasMaxLength(50);
+
+            entity
+                .Property(item => item.GeometryType)
+                .HasColumnName("geometry_type")
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            entity
+                .HasOne(item => item.MachineCapabilities)
+                .WithMany(capabilities => capabilities.SupportedGeometryTypes)
+                .HasForeignKey(item => item.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureMachineOperation(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MachineOperationRecord>(entity =>
+        {
+            entity.ToTable("machine_operations");
+
+            entity.HasKey(operation => operation.Id);
+
+            entity.Property(operation => operation.Id).HasColumnName("id");
+
+            entity
+                .Property(operation => operation.WorkpieceId)
+                .HasColumnName("workpiece_id")
+                .IsRequired();
+
+            entity
+                .Property(operation => operation.MachineId)
+                .HasColumnName("machine_id")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(operation => operation.Type)
+                .HasColumnName("type")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(operation => operation.Status)
+                .HasColumnName("status")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(operation => operation.ProgressPercentage)
+                .HasColumnName("progress_percentage")
+                .IsRequired();
+
+            entity
+                .Property(operation => operation.CurrentPhase)
+                .HasColumnName("current_phase")
+                .HasMaxLength(200);
+
+            entity
+                .Property(operation => operation.FailureReason)
+                .HasColumnName("failure_reason")
+                .HasMaxLength(500);
+
+            entity
+                .Property(operation => operation.CreatedAt)
+                .HasColumnName("created_at")
+                .IsRequired();
+
+            entity.Property(operation => operation.StartedAt).HasColumnName("started_at");
+
+            entity.Property(operation => operation.CompletedAt).HasColumnName("completed_at");
+
+            entity.HasIndex(operation => operation.MachineId);
+
+            entity.HasIndex(operation => operation.Status);
+        });
+    }
+
+    private static void ConfigureLaserCutConfiguration(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LaserCutConfigurationRecord>(entity =>
+        {
+            entity.ToTable("laser_cut_configurations");
+
+            entity.HasKey(configuration => configuration.Id);
+
+            entity.Property(configuration => configuration.Id).HasColumnName("id");
+
+            entity
+                .Property(configuration => configuration.OperationId)
+                .HasColumnName("operation_id")
+                .IsRequired();
+
+            entity.HasIndex(configuration => configuration.OperationId).IsUnique();
+
+            entity
+                .Property(configuration => configuration.MaterialId)
+                .HasColumnName("material_id")
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.NozzleId)
+                .HasColumnName("nozzle_id")
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.DrawingFileId)
+                .HasColumnName("drawing_file_id")
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.GeometryType)
+                .HasColumnName("geometry_type")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.ThicknessMillimeters)
+                .HasColumnName("thickness_millimeters")
+                .HasPrecision(10, 3)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.TubeOuterDiameterMillimeters)
+                .HasColumnName("tube_outer_diameter_millimeters")
+                .HasPrecision(10, 3);
+
+            entity
+                .Property(configuration => configuration.TubeLengthMillimeters)
+                .HasColumnName("tube_length_millimeters")
+                .HasPrecision(12, 3);
+
+            entity
+                .Property(configuration => configuration.SheetWidthMillimeters)
+                .HasColumnName("sheet_width_millimeters")
+                .HasPrecision(12, 3);
+
+            entity
+                .Property(configuration => configuration.SheetHeightMillimeters)
+                .HasColumnName("sheet_height_millimeters")
+                .HasPrecision(12, 3);
+
+            entity
+                .Property(configuration => configuration.LaserPowerWatts)
+                .HasColumnName("laser_power_watts")
+                .HasPrecision(12, 3)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.CuttingSpeedMillimetersPerMinute)
+                .HasColumnName("cutting_speed_millimeters_per_minute")
+                .HasPrecision(12, 3)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.AssistGas)
+                .HasColumnName("assist_gas")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.GasPressureBar)
+                .HasColumnName("gas_pressure_bar")
+                .HasPrecision(10, 3)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.FocalOffsetMillimeters)
+                .HasColumnName("focal_offset_millimeters")
+                .HasPrecision(10, 3)
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.NumberOfPasses)
+                .HasColumnName("number_of_passes")
+                .IsRequired();
+
+            entity
+                .Property(configuration => configuration.CreatedAt)
+                .HasColumnName("created_at")
+                .IsRequired();
+
+            entity
+                .HasOne(configuration => configuration.Operation)
+                .WithOne(operation => operation.LaserCutConfiguration)
+                .HasForeignKey<LaserCutConfigurationRecord>(configuration =>
+                    configuration.OperationId
+                )
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity
+                .HasOne<Material>()
+                .WithMany()
+                .HasForeignKey(configuration => configuration.MaterialId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+                .HasOne<Nozzle>()
+                .WithMany()
+                .HasForeignKey(configuration => configuration.NozzleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+                .HasOne<DrawingFile>()
+                .WithMany()
+                .HasForeignKey(configuration => configuration.DrawingFileId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
