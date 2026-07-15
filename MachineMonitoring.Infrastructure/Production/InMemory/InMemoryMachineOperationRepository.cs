@@ -27,6 +27,42 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
         }
     }
 
+    public Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+        string? machineId,
+        MachineOperationStatus? status,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            IEnumerable<MachineOperation> query = _operations.Values;
+
+            if (!string.IsNullOrWhiteSpace(machineId))
+            {
+                query = query.Where(operation =>
+                    string.Equals(
+                        operation.MachineId,
+                        machineId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
+            }
+
+            if (status is not null)
+            {
+                query = query.Where(operation => operation.Status == status.Value);
+            }
+
+            IReadOnlyCollection<MachineOperation> operations = query
+                .OrderByDescending(operation => operation.CreatedAt)
+                .ToArray();
+
+            return Task.FromResult(operations);
+        }
+    }
+
     public Task AddAsync(
         MachineOperation operation,
         LaserCutConfiguration configuration,

@@ -7,6 +7,12 @@ public interface IMachineOperationRepository
 {
     Task<MachineOperation?> GetByIdAsync(Guid operationId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+        string? machineId,
+        MachineOperationStatus? status,
+        CancellationToken cancellationToken
+    );
+
     Task<LaserCutConfiguration?> GetConfigurationByOperationIdAsync(
         Guid operationId,
         CancellationToken cancellationToken

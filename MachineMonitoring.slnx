@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="MachineMonitoring.Api/MachineMonitoring.Api.csproj" />
   <Project Path="MachineMonitoring.Application/MachineMonitoring.Application.csproj" />
   <Project Path="MachineMonitoring.Console/MachineMonitoring.Console.csproj" />
   <Project Path="MachineMonitoring.Domain/MachineMonitoring.Domain.csproj" />

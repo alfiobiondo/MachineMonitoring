@@ -8,7 +8,6 @@ using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure.Persistence;
 using MachineMonitoring.Infrastructure.Persistence.Repositories;
-using MachineMonitoring.Infrastructure.Production.InMemory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,14 +94,8 @@ builder.Services.AddSingleton<
 
 builder.Services.AddSingleton<IMachineDiagnosticService, CachedMachineDiagnosticService>();
 
-// Catalogo produttivo ancora necessario per
-// i repository che restano in-memory.
-// builder.Services.AddSingleton<InMemoryProductionCatalog>();
-
-// Materiale: ora letto da PostgreSQL.
 builder.Services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 
-// Gli altri repository restano temporaneamente in-memory.
 builder.Services.AddScoped<INozzleRepository, PostgresNozzleRepository>();
 
 builder.Services.AddScoped<IDrawingFileRepository, PostgresDrawingFileRepository>();
@@ -114,10 +107,6 @@ builder.Services.AddScoped<IMachineOperationRepository, PostgresMachineOperation
 // Dominio e application service produttivo
 builder.Services.AddSingleton<LaserCutConfigurationValidator>();
 
-/*
- * Deve essere Scoped perché dipende da IMaterialRepository,
- * che ora è Scoped e usa MachineMonitoringDbContext.
- */
 builder.Services.AddScoped<MachineOperationApplicationService>();
 
 builder.Services.AddTransient<ProductionDemoService>();

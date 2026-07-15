@@ -29,6 +29,31 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         return record is null ? null : RestoreOperation(record);
     }
 
+    public async Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+        string? machineId,
+        MachineOperationStatus? status,
+        CancellationToken cancellationToken
+    )
+    {
+        IQueryable<MachineOperationRecord> query = _dbContext.MachineOperations.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(machineId))
+        {
+            query = query.Where(operation => operation.MachineId == machineId);
+        }
+
+        if (status is not null)
+        {
+            query = query.Where(operation => operation.Status == status.Value);
+        }
+
+        List<MachineOperationRecord> records = await query
+            .OrderByDescending(operation => operation.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return records.Select(RestoreOperation).ToArray();
+    }
+
     public async Task<LaserCutConfiguration?> GetConfigurationByOperationIdAsync(
         Guid operationId,
         CancellationToken cancellationToken
@@ -70,8 +95,6 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         _dbContext.MachineOperations.Add(operationRecord);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _dbContext.ChangeTracker.Clear();
     }
 
     public async Task UpdateAsync(MachineOperation operation, CancellationToken cancellationToken)
@@ -96,8 +119,6 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         record.CompletedAt = operation.CompletedAt;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _dbContext.ChangeTracker.Clear();
     }
 
     private static MachineOperationRecord CreateOperationRecord(MachineOperation operation)

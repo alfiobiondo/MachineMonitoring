@@ -187,6 +187,76 @@ public sealed class MachineOperationApplicationService
         _logger.LogInformation("Machine operation {OperationId} resumed.", operation.Id);
     }
 
+    public async Task UpdateProgressAsync(
+        UpdateMachineOperationProgressCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        MachineOperation operation = await GetRequiredOperationAsync(
+            command.OperationId,
+            cancellationToken
+        );
+
+        operation.UpdateProgress(
+            progressPercentage: command.ProgressPercentage,
+            currentPhase: command.CurrentPhase
+        );
+
+        await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+
+        _logger.LogInformation(
+            "Machine operation {OperationId} progress updated to "
+                + "{ProgressPercentage}%. Current phase: {CurrentPhase}.",
+            operation.Id,
+            operation.ProgressPercentage,
+            operation.CurrentPhase
+        );
+    }
+
+    public async Task CompleteAsync(
+        CompleteMachineOperationCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        MachineOperation operation = await GetRequiredOperationAsync(
+            command.OperationId,
+            cancellationToken
+        );
+
+        operation.Complete(completedAt: DateTimeOffset.UtcNow);
+
+        await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+
+        _logger.LogInformation("Machine operation {OperationId} completed.", operation.Id);
+    }
+
+    public async Task FailAsync(
+        FailMachineOperationCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        MachineOperation operation = await GetRequiredOperationAsync(
+            command.OperationId,
+            cancellationToken
+        );
+
+        operation.Fail(failureReason: command.FailureReason);
+
+        await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+
+        _logger.LogWarning(
+            "Machine operation {OperationId} failed. Reason: {FailureReason}.",
+            operation.Id,
+            operation.FailureReason
+        );
+    }
+
     public async Task CancelAsync(
         CancelMachineOperationCommand command,
         CancellationToken cancellationToken
