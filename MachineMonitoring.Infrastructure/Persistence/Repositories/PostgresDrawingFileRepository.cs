@@ -27,4 +27,14 @@ public sealed class PostgresDrawingFileRepository : IDrawingFileRepository
                 cancellationToken
             );
     }
+
+    public async Task<IReadOnlyCollection<DrawingFile>> GetAllAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        return await _dbContext
+            .DrawingFiles.AsNoTracking()
+            .OrderByDescending(drawingFile => drawingFile.UploadedAt)
+            .ToArrayAsync(cancellationToken);
+    }
 }

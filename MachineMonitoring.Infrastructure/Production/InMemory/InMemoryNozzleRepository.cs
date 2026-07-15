@@ -22,4 +22,23 @@ public sealed class InMemoryNozzleRepository : INozzleRepository
 
         return Task.FromResult(nozzle);
     }
+
+    public Task<IReadOnlyCollection<Nozzle>> GetAllAsync(
+        bool availableOnly,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IEnumerable<Nozzle> query = _nozzles.Values;
+
+        if (availableOnly)
+        {
+            query = query.Where(nozzle => nozzle.IsAvailable);
+        }
+
+        IReadOnlyCollection<Nozzle> nozzles = query.OrderBy(nozzle => nozzle.Code).ToArray();
+
+        return Task.FromResult(nozzles);
+    }
 }

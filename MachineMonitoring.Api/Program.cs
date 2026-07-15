@@ -1,44 +1,29 @@
 using System.Text.Json.Serialization;
+using MachineMonitoring.Api.Catalogs;
+using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
 using MachineMonitoring.Api.Operations;
+using MachineMonitoring.Application;
+using MachineMonitoring.Application.Common;
+using MachineMonitoring.Application.Exceptions;
 using MachineMonitoring.Application.Production;
 using MachineMonitoring.Application.Production.Commands;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
-using MachineMonitoring.Infrastructure.Persistence;
-using MachineMonitoring.Infrastructure.Persistence.Repositories;
-using Microsoft.EntityFrameworkCore;
+using MachineMonitoring.Infrastructure;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+builder
+    .Services.AddMachineMonitoringApplication()
+    .AddMachineMonitoringInfrastructure(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
-
-string connectionString =
-    builder.Configuration.GetConnectionString("MachineMonitoring")
-    ?? throw new InvalidOperationException("Connection string 'MachineMonitoring' was not found.");
-
-builder.Services.AddDbContext<MachineMonitoringDbContext>(options =>
-    options.UseNpgsql(connectionString)
-);
-
-builder.Services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
-
-builder.Services.AddScoped<INozzleRepository, PostgresNozzleRepository>();
-
-builder.Services.AddScoped<IDrawingFileRepository, PostgresDrawingFileRepository>();
-
-builder.Services.AddScoped<IMachineCapabilitiesRepository, PostgresMachineCapabilitiesRepository>();
-
-builder.Services.AddScoped<IMachineOperationRepository, PostgresMachineOperationRepository>();
-
-builder.Services.AddSingleton<LaserCutConfigurationValidator>();
-
-builder.Services.AddScoped<MachineOperationApplicationService>();
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
@@ -67,10 +52,31 @@ app.MapGet(
         async (
             string? machineId,
             string? status,
+            int? page,
+            int? pageSize,
             IMachineOperationRepository repository,
             CancellationToken cancellationToken
         ) =>
         {
+            int resolvedPage = page ?? 1;
+            int resolvedPageSize = pageSize ?? 20;
+
+            if (resolvedPage <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(page),
+                    "Page must be greater than zero."
+                );
+            }
+
+            if (resolvedPageSize is <= 0 or > 100)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(pageSize),
+                    "Page size must be between 1 and 100."
+                );
+            }
+
             MachineOperationStatus? parsedStatus = null;
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -89,15 +95,25 @@ app.MapGet(
                 parsedStatus = value;
             }
 
-            IReadOnlyCollection<MachineOperation> operations = await repository.GetAllAsync(
+            PagedResult<MachineOperation> result = await repository.GetAllAsync(
                 machineId,
                 parsedStatus,
+                resolvedPage,
+                resolvedPageSize,
                 cancellationToken
             );
 
-            MachineOperationResponse[] response = operations
-                .Select(CreateOperationResponse)
+            MachineOperationResponse[] items = result
+                .Items.Select(CreateOperationResponse)
                 .ToArray();
+
+            PagedResponse<MachineOperationResponse> response = new(
+                Items: items,
+                Page: result.Page,
+                PageSize: result.PageSize,
+                TotalItems: result.TotalItems,
+                TotalPages: result.TotalPages
+            );
 
             return Results.Ok(response);
         }
@@ -109,23 +125,16 @@ app.MapGet(
         "/api/operations/{operationId:guid}",
         async (
             Guid operationId,
-            IMachineOperationRepository repository,
+            MachineOperationApplicationService service,
             CancellationToken cancellationToken
         ) =>
         {
-            MachineOperation? operation = await repository.GetByIdAsync(
+            MachineOperationDetailsResult result = await service.GetDetailsAsync(
                 operationId,
                 cancellationToken
             );
 
-            if (operation is null)
-            {
-                return Results.NotFound(
-                    new { message = $"Machine operation {operationId} was not found." }
-                );
-            }
-
-            MachineOperationResponse response = CreateOperationResponse(operation);
+            MachineOperationDetailsResponse response = CreateOperationDetailsResponse(result);
 
             return Results.Ok(response);
         }
@@ -319,7 +328,215 @@ app.MapPost(
     .WithName("FailMachineOperation")
     .WithTags("Operations");
 
+app.MapGet(
+        "/api/materials",
+        async (
+            bool? enabledOnly,
+            IMaterialRepository repository,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            bool resolvedEnabledOnly = enabledOnly ?? true;
+
+            IReadOnlyCollection<Material> materials = await repository.GetAllAsync(
+                resolvedEnabledOnly,
+                cancellationToken
+            );
+
+            MaterialResponse[] response = materials
+                .Select(material => new MaterialResponse(
+                    Id: material.Id,
+                    Code: material.Code,
+                    Name: material.Name,
+                    Category: material.Category.ToString(),
+                    Grade: material.Grade,
+                    IsEnabled: material.IsEnabled
+                ))
+                .ToArray();
+
+            return Results.Ok(response);
+        }
+    )
+    .WithName("GetMaterials")
+    .WithTags("Catalogs");
+
+app.MapGet(
+        "/api/nozzles",
+        async (
+            bool? availableOnly,
+            INozzleRepository repository,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            bool resolvedAvailableOnly = availableOnly ?? true;
+
+            IReadOnlyCollection<Nozzle> nozzles = await repository.GetAllAsync(
+                resolvedAvailableOnly,
+                cancellationToken
+            );
+
+            NozzleResponse[] response = nozzles
+                .Select(nozzle => new NozzleResponse(
+                    Id: nozzle.Id,
+                    Code: nozzle.Code,
+                    Type: nozzle.Type.ToString(),
+                    DiameterMillimeters: nozzle.DiameterMillimeters,
+                    MaximumPressureBar: nozzle.MaximumPressureBar,
+                    WearPercentage: nozzle.WearPercentage,
+                    IsAvailable: nozzle.IsAvailable
+                ))
+                .ToArray();
+
+            return Results.Ok(response);
+        }
+    )
+    .WithName("GetNozzles")
+    .WithTags("Catalogs");
+
+app.MapGet(
+        "/api/drawing-files",
+        async (IDrawingFileRepository repository, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyCollection<DrawingFile> drawingFiles = await repository.GetAllAsync(
+                cancellationToken
+            );
+
+            DrawingFileResponse[] response = drawingFiles
+                .Select(drawingFile => new DrawingFileResponse(
+                    Id: drawingFile.Id,
+                    OriginalFileName: drawingFile.OriginalFileName,
+                    ContentType: drawingFile.ContentType,
+                    SizeBytes: drawingFile.SizeBytes,
+                    Sha256Hash: drawingFile.Sha256Hash,
+                    UploadedAt: drawingFile.UploadedAt
+                ))
+                .ToArray();
+
+            return Results.Ok(response);
+        }
+    )
+    .WithName("GetDrawingFiles")
+    .WithTags("Catalogs");
+
+app.MapGet(
+        "/api/machines/{machineId}/capabilities",
+        async (
+            string machineId,
+            IMachineCapabilitiesRepository repository,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            MachineCapabilities? capabilities = await repository.GetByMachineIdAsync(
+                machineId,
+                cancellationToken
+            );
+
+            if (capabilities is null)
+            {
+                throw new ResourceNotFoundException(
+                    resourceType: "Machine capabilities",
+                    resourceId: machineId
+                );
+            }
+
+            MachineCapabilitiesResponse response = new(
+                MachineId: capabilities.MachineId,
+                MaximumLaserPowerWatts: capabilities.MaximumLaserPowerWatts,
+                MinimumThicknessMillimeters: capabilities.MinimumThicknessMillimeters,
+                MaximumThicknessMillimeters: capabilities.MaximumThicknessMillimeters,
+                SupportedMaterialCategories: capabilities
+                    .SupportedMaterialCategories.Select(category => category.ToString())
+                    .OrderBy(category => category)
+                    .ToArray(),
+                SupportedNozzleIds: capabilities.SupportedNozzleIds.OrderBy(id => id).ToArray(),
+                SupportedGeometryTypes: capabilities
+                    .SupportedGeometryTypes.Select(type => type.ToString())
+                    .OrderBy(type => type)
+                    .ToArray(),
+                MaximumTubeDiameterMillimeters: capabilities.MaximumTubeDiameterMillimeters,
+                MaximumTubeLengthMillimeters: capabilities.MaximumTubeLengthMillimeters,
+                MaximumSheetWidthMillimeters: capabilities.MaximumSheetWidthMillimeters,
+                MaximumSheetHeightMillimeters: capabilities.MaximumSheetHeightMillimeters
+            );
+
+            return Results.Ok(response);
+        }
+    )
+    .WithName("GetMachineCapabilities")
+    .WithTags("Catalogs");
+
 app.Run();
+
+static MachineOperationDetailsResponse CreateOperationDetailsResponse(
+    MachineOperationDetailsResult result
+)
+{
+    WorkpieceGeometryResponse geometry = result.Configuration.Geometry switch
+    {
+        TubeGeometryDetailsResult tube => new WorkpieceGeometryResponse(
+            Type: tube.Type.ToString(),
+            ThicknessMillimeters: tube.ThicknessMillimeters,
+            OuterDiameterMillimeters: tube.OuterDiameterMillimeters,
+            InnerDiameterMillimeters: tube.InnerDiameterMillimeters,
+            LengthMillimeters: tube.LengthMillimeters,
+            WidthMillimeters: null,
+            HeightMillimeters: null
+        ),
+
+        SheetGeometryDetailsResult sheet => new WorkpieceGeometryResponse(
+            Type: sheet.Type.ToString(),
+            ThicknessMillimeters: sheet.ThicknessMillimeters,
+            OuterDiameterMillimeters: null,
+            InnerDiameterMillimeters: null,
+            LengthMillimeters: null,
+            WidthMillimeters: sheet.WidthMillimeters,
+            HeightMillimeters: sheet.HeightMillimeters
+        ),
+
+        _ => throw new InvalidOperationException("Unsupported geometry result."),
+    };
+
+    LaserCutConfigurationResponse configuration = new(
+        Id: result.Configuration.Id,
+        Material: new CatalogItemResponse(
+            Id: result.Configuration.MaterialId,
+            Code: result.Configuration.MaterialCode,
+            Name: result.Configuration.MaterialName
+        ),
+        Nozzle: new CatalogItemResponse(
+            Id: result.Configuration.NozzleId,
+            Code: result.Configuration.NozzleCode,
+            Name: result.Configuration.NozzleCode
+        ),
+        DrawingFile: new DrawingFileSummaryResponse(
+            Id: result.Configuration.DrawingFileId,
+            OriginalFileName: result.Configuration.DrawingFileName
+        ),
+        Geometry: geometry,
+        LaserPowerWatts: result.Configuration.LaserPowerWatts,
+        CuttingSpeedMillimetersPerMinute: result.Configuration.CuttingSpeedMillimetersPerMinute,
+        AssistGas: result.Configuration.AssistGas.ToString(),
+        GasPressureBar: result.Configuration.GasPressureBar,
+        FocalOffsetMillimeters: result.Configuration.FocalOffsetMillimeters,
+        NumberOfPasses: result.Configuration.NumberOfPasses,
+        CreatedAt: result.Configuration.CreatedAt
+    );
+
+    return new MachineOperationDetailsResponse(
+        Id: result.Id,
+        WorkpieceId: result.WorkpieceId,
+        MachineId: result.MachineId,
+        Type: result.Type.ToString(),
+        Status: result.Status.ToString(),
+        ProgressPercentage: result.ProgressPercentage,
+        CurrentPhase: result.CurrentPhase,
+        FailureReason: result.FailureReason,
+        CreatedAt: result.CreatedAt,
+        StartedAt: result.StartedAt,
+        CompletedAt: result.CompletedAt,
+        Configuration: configuration
+    );
+}
 
 static WorkpieceGeometryInput CreateGeometryInput(WorkpieceGeometryRequest request)
 {

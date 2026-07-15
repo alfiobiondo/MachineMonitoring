@@ -1,3 +1,4 @@
+using MachineMonitoring.Application.Common;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
@@ -27,9 +28,11 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
         }
     }
 
-    public Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+    public Task<PagedResult<MachineOperation>> GetAllAsync(
         string? machineId,
         MachineOperationStatus? status,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken
     )
     {
@@ -55,11 +58,23 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
                 query = query.Where(operation => operation.Status == status.Value);
             }
 
-            IReadOnlyCollection<MachineOperation> operations = query
+            MachineOperation[] filteredOperations = query
                 .OrderByDescending(operation => operation.CreatedAt)
                 .ToArray();
 
-            return Task.FromResult(operations);
+            MachineOperation[] pageItems = filteredOperations
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToArray();
+
+            PagedResult<MachineOperation> result = new(
+                Items: pageItems,
+                Page: page,
+                PageSize: pageSize,
+                TotalItems: filteredOperations.Length
+            );
+
+            return Task.FromResult(result);
         }
     }
 

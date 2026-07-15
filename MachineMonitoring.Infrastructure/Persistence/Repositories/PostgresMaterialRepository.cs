@@ -21,4 +21,19 @@ public sealed class PostgresMaterialRepository : IMaterialRepository
             .Materials.AsNoTracking()
             .SingleOrDefaultAsync(material => material.Id == materialId, cancellationToken);
     }
+
+    public async Task<IReadOnlyCollection<Material>> GetAllAsync(
+        bool enabledOnly,
+        CancellationToken cancellationToken
+    )
+    {
+        IQueryable<Material> query = _dbContext.Materials.AsNoTracking();
+
+        if (enabledOnly)
+        {
+            query = query.Where(material => material.IsEnabled);
+        }
+
+        return await query.OrderBy(material => material.Code).ToArrayAsync(cancellationToken);
+    }
 }

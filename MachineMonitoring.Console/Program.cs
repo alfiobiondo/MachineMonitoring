@@ -55,16 +55,6 @@ builder
 
 builder.Services.AddMemoryCache();
 
-string connectionString =
-    builder.Configuration.GetConnectionString("MachineMonitoring")
-    ?? throw new InvalidOperationException("Connection string 'MachineMonitoring' was not found.");
-
-builder.Services.AddDbContext<MachineMonitoringDbContext>(options =>
-    options.UseNpgsql(connectionString)
-);
-
-builder.Services.AddScoped<ProductionDatabaseSeeder>();
-
 // Monitoraggio macchine
 builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 
@@ -94,20 +84,10 @@ builder.Services.AddSingleton<
 
 builder.Services.AddSingleton<IMachineDiagnosticService, CachedMachineDiagnosticService>();
 
-builder.Services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
-
-builder.Services.AddScoped<INozzleRepository, PostgresNozzleRepository>();
-
-builder.Services.AddScoped<IDrawingFileRepository, PostgresDrawingFileRepository>();
-
-builder.Services.AddScoped<IMachineCapabilitiesRepository, PostgresMachineCapabilitiesRepository>();
-
-builder.Services.AddScoped<IMachineOperationRepository, PostgresMachineOperationRepository>();
-
 // Dominio e application service produttivo
-builder.Services.AddSingleton<LaserCutConfigurationValidator>();
-
-builder.Services.AddScoped<MachineOperationApplicationService>();
+builder
+    .Services.AddMachineMonitoringApplication()
+    .AddMachineMonitoringInfrastructure(builder.Configuration);
 
 builder.Services.AddTransient<ProductionDemoService>();
 

@@ -71,7 +71,7 @@ public sealed class MachineOperationApplicationService
 
         Nozzle nozzle = await GetRequiredNozzleAsync(command.NozzleId, cancellationToken);
 
-        await EnsureDrawingFileExistsAsync(command.DrawingFileId, cancellationToken);
+        await GetRequiredDrawingFileAsync(command.DrawingFileId, cancellationToken);
 
         MachineCapabilities capabilities = await GetRequiredCapabilitiesAsync(
             command.MachineId,
@@ -276,6 +276,84 @@ public sealed class MachineOperationApplicationService
         _logger.LogInformation("Machine operation {OperationId} cancelled.", operation.Id);
     }
 
+    public async Task<MachineOperationDetailsResult> GetDetailsAsync(
+        Guid operationId,
+        CancellationToken cancellationToken
+    )
+    {
+        if (operationId == Guid.Empty)
+        {
+            throw new ArgumentException("The operation ID cannot be empty.", nameof(operationId));
+        }
+
+        MachineOperation operation = await GetRequiredOperationAsync(
+            operationId,
+            cancellationToken
+        );
+
+        LaserCutConfiguration? configuration =
+            await _machineOperationRepository.GetConfigurationByOperationIdAsync(
+                operationId,
+                cancellationToken
+            );
+
+        if (configuration is null)
+        {
+            throw new ResourceNotFoundException(
+                resourceType: "Laser-cut configuration",
+                resourceId: operationId.ToString()
+            );
+        }
+
+        Material material = await GetRequiredMaterialAsync(
+            configuration.MaterialId,
+            cancellationToken
+        );
+
+        Nozzle nozzle = await GetRequiredNozzleAsync(configuration.NozzleId, cancellationToken);
+
+        DrawingFile drawingFile = await GetRequiredDrawingFileAsync(
+            configuration.DrawingFileId,
+            cancellationToken
+        );
+
+        WorkpieceGeometryDetailsResult geometry = CreateGeometryDetails(configuration.Geometry);
+
+        LaserCutConfigurationDetailsResult configurationResult = new(
+            Id: configuration.Id,
+            MaterialId: material.Id,
+            MaterialCode: material.Code,
+            MaterialName: material.Name,
+            NozzleId: nozzle.Id,
+            NozzleCode: nozzle.Code,
+            DrawingFileId: drawingFile.Id,
+            DrawingFileName: drawingFile.OriginalFileName,
+            Geometry: geometry,
+            LaserPowerWatts: configuration.LaserPowerWatts,
+            CuttingSpeedMillimetersPerMinute: configuration.CuttingSpeedMillimetersPerMinute,
+            AssistGas: configuration.AssistGas,
+            GasPressureBar: configuration.GasPressureBar,
+            FocalOffsetMillimeters: configuration.FocalOffsetMillimeters,
+            NumberOfPasses: configuration.NumberOfPasses,
+            CreatedAt: configuration.CreatedAt
+        );
+
+        return new MachineOperationDetailsResult(
+            Id: operation.Id,
+            WorkpieceId: operation.WorkpieceId,
+            MachineId: operation.MachineId,
+            Type: operation.Type,
+            Status: operation.Status,
+            ProgressPercentage: operation.ProgressPercentage,
+            CurrentPhase: operation.CurrentPhase,
+            FailureReason: operation.FailureReason,
+            CreatedAt: operation.CreatedAt,
+            StartedAt: operation.StartedAt,
+            CompletedAt: operation.CompletedAt,
+            Configuration: configurationResult
+        );
+    }
+
     private static void ValidateCreateCommand(CreateLaserCutOperationCommand command)
     {
         if (command.WorkpieceId == Guid.Empty)
@@ -339,7 +417,7 @@ public sealed class MachineOperationApplicationService
             );
     }
 
-    private async Task EnsureDrawingFileExistsAsync(
+    private async Task<DrawingFile> GetRequiredDrawingFileAsync(
         Guid drawingFileId,
         CancellationToken cancellationToken
     )
@@ -349,13 +427,11 @@ public sealed class MachineOperationApplicationService
             cancellationToken
         );
 
-        if (drawingFile is null)
-        {
-            throw new ResourceNotFoundException(
+        return drawingFile
+            ?? throw new ResourceNotFoundException(
                 resourceType: "Drawing file",
                 resourceId: drawingFileId.ToString()
             );
-        }
     }
 
     private async Task<MachineCapabilities> GetRequiredCapabilitiesAsync(
@@ -388,5 +464,28 @@ public sealed class MachineOperationApplicationService
                 resourceType: "Machine operation",
                 resourceId: operationId.ToString()
             );
+    }
+
+    private static WorkpieceGeometryDetailsResult CreateGeometryDetails(IWorkpieceGeometry geometry)
+    {
+        return geometry switch
+        {
+            TubeGeometry tube => new TubeGeometryDetailsResult(
+                OuterDiameterMillimeters: tube.OuterDiameterMillimeters,
+                ThicknessMillimeters: tube.ThicknessMillimeters,
+                LengthMillimeters: tube.LengthMillimeters,
+                InnerDiameterMillimeters: tube.InnerDiameterMillimeters
+            ),
+
+            SheetGeometry sheet => new SheetGeometryDetailsResult(
+                WidthMillimeters: sheet.WidthMillimeters,
+                HeightMillimeters: sheet.HeightMillimeters,
+                ThicknessMillimeters: sheet.ThicknessMillimeters
+            ),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported geometry type " + $"'{geometry.GetType().Name}'."
+            ),
+        };
     }
 }

@@ -1,3 +1,4 @@
+using MachineMonitoring.Application.Common;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
 
@@ -7,9 +8,11 @@ public interface IMachineOperationRepository
 {
     Task<MachineOperation?> GetByIdAsync(Guid operationId, CancellationToken cancellationToken);
 
-    Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+    Task<PagedResult<MachineOperation>> GetAllAsync(
         string? machineId,
         MachineOperationStatus? status,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken
     );
 

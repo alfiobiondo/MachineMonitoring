@@ -1,3 +1,4 @@
+using MachineMonitoring.Application.Common;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
@@ -29,9 +30,11 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         return record is null ? null : RestoreOperation(record);
     }
 
-    public async Task<IReadOnlyCollection<MachineOperation>> GetAllAsync(
+    public async Task<PagedResult<MachineOperation>> GetAllAsync(
         string? machineId,
         MachineOperationStatus? status,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken
     )
     {
@@ -47,11 +50,25 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
             query = query.Where(operation => operation.Status == status.Value);
         }
 
+        int totalItems = await query.CountAsync(cancellationToken);
+
+        int itemsToSkip = (page - 1) * pageSize;
+
         List<MachineOperationRecord> records = await query
             .OrderByDescending(operation => operation.CreatedAt)
+            .ThenByDescending(operation => operation.Id)
+            .Skip(itemsToSkip)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return records.Select(RestoreOperation).ToArray();
+        MachineOperation[] operations = records.Select(RestoreOperation).ToArray();
+
+        return new PagedResult<MachineOperation>(
+            Items: operations,
+            Page: page,
+            PageSize: pageSize,
+            TotalItems: totalItems
+        );
     }
 
     public async Task<LaserCutConfiguration?> GetConfigurationByOperationIdAsync(

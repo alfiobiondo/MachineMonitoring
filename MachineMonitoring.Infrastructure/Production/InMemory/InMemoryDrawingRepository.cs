@@ -22,4 +22,15 @@ public sealed class InMemoryDrawingFileRepository : IDrawingFileRepository
 
         return Task.FromResult(drawingFile);
     }
+
+    public Task<IReadOnlyCollection<DrawingFile>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyCollection<DrawingFile> drawingFiles = _drawingFiles
+            .Values.OrderByDescending(drawingFile => drawingFile.UploadedAt)
+            .ToArray();
+
+        return Task.FromResult(drawingFiles);
+    }
 }

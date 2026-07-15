@@ -22,4 +22,25 @@ public sealed class InMemoryMaterialRepository : IMaterialRepository
 
         return Task.FromResult(material);
     }
+
+    public Task<IReadOnlyCollection<Material>> GetAllAsync(
+        bool enabledOnly,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IEnumerable<Material> query = _materials.Values;
+
+        if (enabledOnly)
+        {
+            query = query.Where(material => material.IsEnabled);
+        }
+
+        IReadOnlyCollection<Material> materials = query
+            .OrderBy(material => material.Code)
+            .ToArray();
+
+        return Task.FromResult(materials);
+    }
 }

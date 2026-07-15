@@ -21,4 +21,19 @@ public sealed class PostgresNozzleRepository : INozzleRepository
             .Nozzles.AsNoTracking()
             .SingleOrDefaultAsync(nozzle => nozzle.Id == nozzleId, cancellationToken);
     }
+
+    public async Task<IReadOnlyCollection<Nozzle>> GetAllAsync(
+        bool availableOnly,
+        CancellationToken cancellationToken
+    )
+    {
+        IQueryable<Nozzle> query = _dbContext.Nozzles.AsNoTracking();
+
+        if (availableOnly)
+        {
+            query = query.Where(nozzle => nozzle.IsAvailable);
+        }
+
+        return await query.OrderBy(nozzle => nozzle.Code).ToArrayAsync(cancellationToken);
+    }
 }
