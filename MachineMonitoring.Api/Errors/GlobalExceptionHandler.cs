@@ -1,4 +1,5 @@
 using MachineMonitoring.Application.Exceptions;
+using MachineMonitoring.Domain.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -63,7 +64,7 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 exception.Message
             ),
 
-            InvalidOperationException => (
+            BusinessRuleViolationException => (
                 StatusCodes.Status422UnprocessableEntity,
                 "Business rule violation",
                 exception.Message

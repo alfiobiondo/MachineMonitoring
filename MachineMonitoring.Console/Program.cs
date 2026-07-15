@@ -1,14 +1,9 @@
 ﻿using MachineMonitoring.Application;
 using MachineMonitoring.Application.Configuration;
-using MachineMonitoring.Application.Production;
-using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Console;
-using MachineMonitoring.Domain.Technology;
 using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure.Persistence;
-using MachineMonitoring.Infrastructure.Persistence.Repositories;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

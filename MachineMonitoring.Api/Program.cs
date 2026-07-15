@@ -585,3 +585,5 @@ static MachineOperationResponse CreateOperationResponse(MachineOperation operati
         CompletedAt: operation.CompletedAt
     );
 }
+
+public partial class Program;

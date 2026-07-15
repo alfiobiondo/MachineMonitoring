@@ -1,3 +1,5 @@
+using MachineMonitoring.Domain.Exceptions;
+
 namespace MachineMonitoring.Domain.Production;
 
 public sealed class MachineOperation
@@ -58,7 +60,7 @@ public sealed class MachineOperation
     {
         if (Status != MachineOperationStatus.Queued)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot be started from status {Status}."
             );
         }
@@ -74,7 +76,7 @@ public sealed class MachineOperation
     {
         if (Status != MachineOperationStatus.Running)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Progress cannot be updated while operation {Id} is {Status}."
             );
         }
@@ -97,7 +99,7 @@ public sealed class MachineOperation
     {
         if (Status != MachineOperationStatus.Running)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot be paused from status {Status}."
             );
         }
@@ -109,7 +111,7 @@ public sealed class MachineOperation
     {
         if (Status != MachineOperationStatus.Paused)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot be resumed from status {Status}."
             );
         }
@@ -121,7 +123,7 @@ public sealed class MachineOperation
     {
         if (Status != MachineOperationStatus.Running)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot be completed from status {Status}."
             );
         }
@@ -136,7 +138,7 @@ public sealed class MachineOperation
     {
         if (Status is not MachineOperationStatus.Running and not MachineOperationStatus.Paused)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot fail from status {Status}."
             );
         }
@@ -156,7 +158,7 @@ public sealed class MachineOperation
                 or MachineOperationStatus.Cancelled
         )
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot be cancelled from status {Status}."
             );
         }
