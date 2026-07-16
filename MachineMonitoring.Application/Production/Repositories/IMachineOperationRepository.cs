@@ -28,4 +28,6 @@ public interface IMachineOperationRepository
     );
 
     Task UpdateAsync(MachineOperation operation, CancellationToken cancellationToken);
+
+    Task<MachineOperation?> GetNextQueuedAsync(CancellationToken cancellationToken);
 }

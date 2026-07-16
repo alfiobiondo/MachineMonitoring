@@ -16,6 +16,8 @@ public static class DependencyInjection
 
         services.AddScoped<MachineOperationApplicationService>();
 
+        services.AddScoped<MachineOperationSimulator>();
+
         return services;
     }
 }

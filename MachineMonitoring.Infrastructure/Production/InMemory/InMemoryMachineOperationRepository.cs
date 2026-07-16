@@ -148,4 +148,20 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
             return Task.FromResult(configuration);
         }
     }
+
+    public Task<MachineOperation?> GetNextQueuedAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            MachineOperation? operation = _operations
+                .Values.Where(operation => operation.Status == MachineOperationStatus.Queued)
+                .OrderBy(operation => operation.CreatedAt)
+                .ThenBy(operation => operation.Id)
+                .FirstOrDefault();
+
+            return Task.FromResult(operation);
+        }
+    }
 }

@@ -1,6 +1,7 @@
 ﻿using MachineMonitoring.Application;
 using MachineMonitoring.Application.Configuration;
 using MachineMonitoring.Console;
+using MachineMonitoring.Console.Production;
 using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure.Persistence;
@@ -48,6 +49,13 @@ builder
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// Options: simulator
+builder
+    .Services.AddOptions<OperationSimulatorOptions>()
+    .Bind(builder.Configuration.GetSection(OperationSimulatorOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddMemoryCache();
 
 // Monitoraggio macchine
@@ -62,6 +70,8 @@ builder.Services.AddTransient<MachineReporter>();
 builder.Services.AddTransient<MachinePollingService>();
 
 builder.Services.AddHostedService<MachinePollingWorker>();
+
+builder.Services.AddHostedService<MachineOperationSimulatorWorker>();
 
 // Pipeline diagnostica:
 // cache → retry → limite concorrenza → servizio reale
@@ -116,13 +126,13 @@ try
      * - PostgresMaterialRepository scoped;
      * - MachineMonitoringDbContext scoped.
      */
-    using (IServiceScope scope = host.Services.CreateScope())
-    {
-        ProductionDemoService demoService =
-            scope.ServiceProvider.GetRequiredService<ProductionDemoService>();
+    // using (IServiceScope scope = host.Services.CreateScope())
+    // {
+    //     ProductionDemoService demoService =
+    //         scope.ServiceProvider.GetRequiredService<ProductionDemoService>();
 
-        await demoService.RunAsync(CancellationToken.None);
-    }
+    //     await demoService.RunAsync(CancellationToken.None);
+    // }
 
     // Avvia il Generic Host e il worker.
     await host.RunAsync();

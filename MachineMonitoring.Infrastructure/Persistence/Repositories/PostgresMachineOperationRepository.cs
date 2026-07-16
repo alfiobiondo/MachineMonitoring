@@ -138,6 +138,18 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<MachineOperation?> GetNextQueuedAsync(CancellationToken cancellationToken)
+    {
+        MachineOperationRecord? record = await _dbContext
+            .MachineOperations.AsNoTracking()
+            .Where(operation => operation.Status == MachineOperationStatus.Queued)
+            .OrderBy(operation => operation.CreatedAt)
+            .ThenBy(operation => operation.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return record is null ? null : RestoreOperation(record);
+    }
+
     private static MachineOperationRecord CreateOperationRecord(MachineOperation operation)
     {
         return new MachineOperationRecord
