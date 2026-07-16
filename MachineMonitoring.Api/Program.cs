@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using MachineMonitoring.Api.Catalogs;
 using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
+using MachineMonitoring.Api.HealthChecks;
 using MachineMonitoring.Api.Operations;
 using MachineMonitoring.Application;
 using MachineMonitoring.Application.Common;
@@ -13,6 +14,7 @@ using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
 using MachineMonitoring.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -42,9 +44,22 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet(
-    "/health",
-    () => Results.Ok(new { status = "Healthy", timestamp = DateTimeOffset.UtcNow })
+app.MapHealthChecks(
+    "/health/live",
+    new HealthCheckOptions
+    {
+        Predicate = _ => false,
+        ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+    }
+);
+
+app.MapHealthChecks(
+    "/health/ready",
+    new HealthCheckOptions
+    {
+        Predicate = registration => registration.Tags.Contains("ready"),
+        ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+    }
 );
 
 app.MapGet(

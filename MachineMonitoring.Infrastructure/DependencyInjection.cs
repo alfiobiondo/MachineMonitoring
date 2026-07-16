@@ -1,9 +1,11 @@
 using MachineMonitoring.Application.Production.Repositories;
+using MachineMonitoring.Infrastructure.HealthChecks;
 using MachineMonitoring.Infrastructure.Persistence;
 using MachineMonitoring.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace MachineMonitoring.Infrastructure;
 
@@ -26,6 +28,14 @@ public static class DependencyInjection
         services.AddDbContext<MachineMonitoringDbContext>(options =>
             options.UseNpgsql(connectionString)
         );
+
+        services
+            .AddHealthChecks()
+            .AddCheck<PostgreSqlHealthCheck>(
+                name: "postgresql",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: ["ready", "database"]
+            );
 
         services.AddScoped<ProductionDatabaseSeeder>();
 

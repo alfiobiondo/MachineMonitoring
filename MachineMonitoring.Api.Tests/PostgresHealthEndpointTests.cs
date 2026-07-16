@@ -1,13 +1,13 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace MachineMonitoring.Api.Tests;
 
-public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection(PostgresApiTestCollection.Name)]
+public sealed class PostgresHealthEndpointTests
 {
     private readonly HttpClient _client;
 
-    public HealthEndpointTests(WebApplicationFactory<Program> factory)
+    public PostgresHealthEndpointTests(PostgresWebApplicationFactory factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
@@ -15,10 +15,10 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
-    public async Task GetLiveHealth_ReturnsOk()
+    public async Task GetReadyHealth_WhenPostgresIsRunning_ReturnsOk()
     {
         // Act
-        HttpResponseMessage response = await _client.GetAsync("/health/live");
+        HttpResponseMessage response = await _client.GetAsync("/health/ready");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
