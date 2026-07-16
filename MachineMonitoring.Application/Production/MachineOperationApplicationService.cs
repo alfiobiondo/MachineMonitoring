@@ -14,11 +14,10 @@ public sealed class MachineOperationApplicationService
     private readonly INozzleRepository _nozzleRepository;
     private readonly IDrawingFileRepository _drawingFileRepository;
     private readonly IMachineCapabilitiesRepository _machineCapabilitiesRepository;
-
+    private readonly IWorkpieceRepository _workpieceRepository;
     private readonly IMachineOperationRepository _machineOperationRepository;
-
+    private readonly ProductionSequenceService _productionSequenceService;
     private readonly LaserCutConfigurationValidator _configurationValidator;
-
     private readonly ILogger<MachineOperationApplicationService> _logger;
 
     public MachineOperationApplicationService(
@@ -26,7 +25,9 @@ public sealed class MachineOperationApplicationService
         INozzleRepository nozzleRepository,
         IDrawingFileRepository drawingFileRepository,
         IMachineCapabilitiesRepository machineCapabilitiesRepository,
+        IWorkpieceRepository workpieceRepository,
         IMachineOperationRepository machineOperationRepository,
+        ProductionSequenceService productionSequenceService,
         LaserCutConfigurationValidator configurationValidator,
         ILogger<MachineOperationApplicationService> logger
     )
@@ -36,25 +37,21 @@ public sealed class MachineOperationApplicationService
         ArgumentNullException.ThrowIfNull(nozzleRepository);
 
         ArgumentNullException.ThrowIfNull(drawingFileRepository);
-
         ArgumentNullException.ThrowIfNull(machineCapabilitiesRepository);
-
+        ArgumentNullException.ThrowIfNull(workpieceRepository);
         ArgumentNullException.ThrowIfNull(machineOperationRepository);
-
+        ArgumentNullException.ThrowIfNull(productionSequenceService);
         ArgumentNullException.ThrowIfNull(configurationValidator);
-
         ArgumentNullException.ThrowIfNull(logger);
 
         _materialRepository = materialRepository;
         _nozzleRepository = nozzleRepository;
         _drawingFileRepository = drawingFileRepository;
-
         _machineCapabilitiesRepository = machineCapabilitiesRepository;
-
+        _workpieceRepository = workpieceRepository;
         _machineOperationRepository = machineOperationRepository;
-
+        _productionSequenceService = productionSequenceService;
         _configurationValidator = configurationValidator;
-
         _logger = logger;
     }
 
@@ -66,6 +63,8 @@ public sealed class MachineOperationApplicationService
         ArgumentNullException.ThrowIfNull(command);
 
         ValidateCreateCommand(command);
+
+        await GetRequiredWorkpieceAsync(command.WorkpieceId, cancellationToken);
 
         Material material = await GetRequiredMaterialAsync(command.MaterialId, cancellationToken);
 
@@ -87,6 +86,7 @@ public sealed class MachineOperationApplicationService
         MachineOperation operation = new(
             id: operationId,
             workpieceId: command.WorkpieceId,
+            sequenceNumber: command.SequenceNumber,
             machineId: command.MachineId,
             type: MachineOperationType.LaserCutting,
             createdAt: createdAt
@@ -125,6 +125,7 @@ public sealed class MachineOperationApplicationService
         return new CreateLaserCutOperationResult(
             OperationId: operation.Id,
             ConfigurationId: configuration.Id,
+            SequenceNumber: operation.SequenceNumber,
             OperationStatus: operation.Status,
             GeometryType: configuration.GeometryType
         );
@@ -141,6 +142,8 @@ public sealed class MachineOperationApplicationService
             command.OperationId,
             cancellationToken
         );
+
+        await _productionSequenceService.EnsureOperationCanStartAsync(operation, cancellationToken);
 
         operation.Start(startedAt: DateTimeOffset.UtcNow, initialPhase: command.InitialPhase);
 
@@ -231,6 +234,12 @@ public sealed class MachineOperationApplicationService
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
 
+        await _productionSequenceService.HandleOperationCompletedAsync(
+            operation,
+            initialPhase: "Preparing laser",
+            cancellationToken
+        );
+
         _logger.LogInformation("Machine operation {OperationId} completed.", operation.Id);
     }
 
@@ -249,6 +258,11 @@ public sealed class MachineOperationApplicationService
         operation.Fail(failureReason: command.FailureReason);
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+
+        await _productionSequenceService.HandleOperationBlockedAsync(
+            operation.Id,
+            cancellationToken
+        );
 
         _logger.LogWarning(
             "Machine operation {OperationId} failed. Reason: {FailureReason}.",
@@ -272,6 +286,11 @@ public sealed class MachineOperationApplicationService
         operation.Cancel();
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+
+        await _productionSequenceService.HandleOperationBlockedAsync(
+            operation.Id,
+            cancellationToken
+        );
 
         _logger.LogInformation("Machine operation {OperationId} cancelled.", operation.Id);
     }
@@ -341,6 +360,7 @@ public sealed class MachineOperationApplicationService
         return new MachineOperationDetailsResult(
             Id: operation.Id,
             WorkpieceId: operation.WorkpieceId,
+            SequenceNumber: operation.SequenceNumber,
             MachineId: operation.MachineId,
             Type: operation.Type,
             Status: operation.Status,
@@ -359,6 +379,14 @@ public sealed class MachineOperationApplicationService
         if (command.WorkpieceId == Guid.Empty)
         {
             throw new ArgumentException("The workpiece ID cannot be empty.", nameof(command));
+        }
+
+        if (command.SequenceNumber <= 0)
+        {
+            throw new ArgumentException(
+                "The sequence number must be greater than zero.",
+                nameof(command)
+            );
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(command.MachineId);
@@ -431,6 +459,23 @@ public sealed class MachineOperationApplicationService
             ?? throw new ResourceNotFoundException(
                 resourceType: "Drawing file",
                 resourceId: drawingFileId.ToString()
+            );
+    }
+
+    private async Task<Workpiece> GetRequiredWorkpieceAsync(
+        Guid workpieceId,
+        CancellationToken cancellationToken
+    )
+    {
+        Workpiece? workpiece = await _workpieceRepository.GetByIdAsync(
+            workpieceId,
+            cancellationToken
+        );
+
+        return workpiece
+            ?? throw new ResourceNotFoundException(
+                resourceType: "Workpiece",
+                resourceId: workpieceId.ToString()
             );
     }
 

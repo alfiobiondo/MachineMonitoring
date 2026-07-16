@@ -3,7 +3,7 @@ namespace MachineMonitoring.Domain.Production;
 public enum WorkpieceStatus
 {
     Pending,
-    InProgress,
+    Running,
     Completed,
     Failed,
     Cancelled,

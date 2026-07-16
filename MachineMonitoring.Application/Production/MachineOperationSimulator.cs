@@ -9,8 +9,6 @@ namespace MachineMonitoring.Application.Production;
 
 public sealed class MachineOperationSimulator
 {
-    private readonly IMachineOperationRepository _operationRepository;
-
     private readonly MachineOperationApplicationService _operationService;
 
     private readonly OperationSimulatorOptions _options;
@@ -18,85 +16,54 @@ public sealed class MachineOperationSimulator
     private readonly ILogger<MachineOperationSimulator> _logger;
 
     public MachineOperationSimulator(
-        IMachineOperationRepository operationRepository,
         MachineOperationApplicationService operationService,
         IOptions<OperationSimulatorOptions> options,
         ILogger<MachineOperationSimulator> logger
     )
     {
-        ArgumentNullException.ThrowIfNull(operationRepository);
-
         ArgumentNullException.ThrowIfNull(operationService);
-
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _operationRepository = operationRepository;
         _operationService = operationService;
         _options = options.Value;
         _logger = logger;
     }
 
-    public async Task<bool> TryProcessNextAsync(CancellationToken cancellationToken)
+    public async Task ProcessRunningOperationAsync(
+        MachineOperation operation,
+        CancellationToken cancellationToken
+    )
     {
-        MachineOperation? operation = await _operationRepository.GetNextQueuedAsync(
-            cancellationToken
-        );
+        ArgumentNullException.ThrowIfNull(operation);
 
-        if (operation is null)
+        if (operation.Status != MachineOperationStatus.Running)
         {
-            return false;
+            return;
         }
 
-        _logger.LogInformation(
-            "The simulator selected queued operation {OperationId}.",
-            operation.Id
-        );
+        int updatedProgress = Math.Min(100, operation.ProgressPercentage + _options.ProgressIncrement);
 
-        await _operationService.StartAsync(
-            new StartMachineOperationCommand(
+        if (updatedProgress >= 100)
+        {
+            await _operationService.CompleteAsync(
+                new CompleteMachineOperationCommand(OperationId: operation.Id),
+                cancellationToken
+            );
+
+            _logger.LogInformation("The simulator completed operation {OperationId}.", operation.Id);
+
+            return;
+        }
+
+        await _operationService.UpdateProgressAsync(
+            new UpdateMachineOperationProgressCommand(
                 OperationId: operation.Id,
-                InitialPhase: _options.InitialPhase
+                ProgressPercentage: updatedProgress,
+                CurrentPhase: CreatePhaseDescription(updatedProgress)
             ),
             cancellationToken
         );
-
-        await SimulateProgressAsync(operation.Id, cancellationToken);
-
-        return true;
-    }
-
-    private async Task SimulateProgressAsync(Guid operationId, CancellationToken cancellationToken)
-    {
-        int progress = _options.ProgressIncrement;
-
-        while (progress < 100)
-        {
-            await Task.Delay(
-                TimeSpan.FromSeconds(_options.ProgressIntervalSeconds),
-                cancellationToken
-            );
-
-            await _operationService.UpdateProgressAsync(
-                new UpdateMachineOperationProgressCommand(
-                    OperationId: operationId,
-                    ProgressPercentage: progress,
-                    CurrentPhase: CreatePhaseDescription(progress)
-                ),
-                cancellationToken
-            );
-
-            progress += _options.ProgressIncrement;
-        }
-
-        await Task.Delay(TimeSpan.FromSeconds(_options.ProgressIntervalSeconds), cancellationToken);
-
-        await _operationService.CompleteAsync(
-            new CompleteMachineOperationCommand(OperationId: operationId),
-            cancellationToken
-        );
-
-        _logger.LogInformation("The simulator completed operation {OperationId}.", operationId);
     }
 
     private static string CreatePhaseDescription(int progress)

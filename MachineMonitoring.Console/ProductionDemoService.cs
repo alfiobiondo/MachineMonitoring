@@ -12,34 +12,56 @@ namespace MachineMonitoring.Console;
 public sealed class ProductionDemoService
 {
     private readonly MachineOperationApplicationService _applicationService;
-
+    private readonly IProductionLotRepository _productionLotRepository;
+    private readonly IWorkpieceRepository _workpieceRepository;
     private readonly IMachineOperationRepository _operationRepository;
-
     private readonly ILogger<ProductionDemoService> _logger;
 
     public ProductionDemoService(
         MachineOperationApplicationService applicationService,
+        IProductionLotRepository productionLotRepository,
+        IWorkpieceRepository workpieceRepository,
         IMachineOperationRepository operationRepository,
         ILogger<ProductionDemoService> logger
     )
     {
         ArgumentNullException.ThrowIfNull(applicationService);
-
+        ArgumentNullException.ThrowIfNull(productionLotRepository);
+        ArgumentNullException.ThrowIfNull(workpieceRepository);
         ArgumentNullException.ThrowIfNull(operationRepository);
-
         ArgumentNullException.ThrowIfNull(logger);
 
         _applicationService = applicationService;
+        _productionLotRepository = productionLotRepository;
+        _workpieceRepository = workpieceRepository;
         _operationRepository = operationRepository;
         _logger = logger;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        ProductionLot productionLot = new(
+            id: Guid.NewGuid(),
+            code: "LOT-DEMO-001",
+            plannedQuantity: 1,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
         Guid workpieceId = Guid.NewGuid();
+        Workpiece workpiece = new(
+            id: workpieceId,
+            productionLotId: productionLot.Id,
+            code: "WP-DEMO-001",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        await _productionLotRepository.AddAsync(productionLot, cancellationToken);
+        await _workpieceRepository.AddAsync(workpiece, cancellationToken);
 
         CreateLaserCutOperationCommand command = new(
             WorkpieceId: workpieceId,
+            SequenceNumber: 1,
             MachineId: "M-001",
             MaterialId: InMemoryProductionData.StainlessSteel304MaterialId,
             NozzleId: InMemoryProductionData.Nozzle12Id,

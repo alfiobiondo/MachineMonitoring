@@ -1,3 +1,5 @@
+using MachineMonitoring.Domain.Exceptions;
+
 namespace MachineMonitoring.Domain.Production;
 
 public sealed class ProductionLot
@@ -42,22 +44,26 @@ public sealed class ProductionLot
 
     public void Start(DateTimeOffset startedAt)
     {
-        if (Status != ProductionLotStatus.Planned)
+        if (Status is ProductionLotStatus.Completed or ProductionLotStatus.Cancelled or ProductionLotStatus.Failed)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Production lot {Code} cannot be started from status {Status}."
             );
         }
 
-        Status = ProductionLotStatus.InProgress;
-        StartedAt = startedAt;
+        Status = ProductionLotStatus.Running;
+
+        if (StartedAt is null)
+        {
+            StartedAt = startedAt;
+        }
     }
 
     public void Complete(DateTimeOffset completedAt)
     {
-        if (Status != ProductionLotStatus.InProgress)
+        if (Status is ProductionLotStatus.Completed or ProductionLotStatus.Cancelled or ProductionLotStatus.Failed)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Production lot {Code} cannot be completed from status {Status}."
             );
         }
@@ -66,15 +72,57 @@ public sealed class ProductionLot
         CompletedAt = completedAt;
     }
 
+    public void Fail(DateTimeOffset failedAt)
+    {
+        if (Status is ProductionLotStatus.Completed or ProductionLotStatus.Cancelled or ProductionLotStatus.Failed)
+        {
+            throw new BusinessRuleViolationException(
+                $"Production lot {Code} cannot fail from status {Status}."
+            );
+        }
+
+        Status = ProductionLotStatus.Failed;
+        CompletedAt = failedAt;
+    }
+
     public void Cancel()
     {
-        if (Status is ProductionLotStatus.Completed or ProductionLotStatus.Cancelled)
+        if (
+            Status
+            is ProductionLotStatus.Completed
+                or ProductionLotStatus.Cancelled
+                or ProductionLotStatus.Failed
+        )
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Production lot {Code} cannot be cancelled from status {Status}."
             );
         }
 
         Status = ProductionLotStatus.Cancelled;
+    }
+
+    public static ProductionLot Restore(
+        Guid id,
+        string code,
+        int plannedQuantity,
+        ProductionLotStatus status,
+        DateTimeOffset createdAt,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? completedAt
+    )
+    {
+        ProductionLot lot = new(
+            id: id,
+            code: code,
+            plannedQuantity: plannedQuantity,
+            createdAt: createdAt
+        );
+
+        lot.Status = status;
+        lot.StartedAt = startedAt;
+        lot.CompletedAt = completedAt;
+
+        return lot;
     }
 }

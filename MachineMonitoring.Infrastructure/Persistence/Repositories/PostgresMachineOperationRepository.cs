@@ -86,6 +86,68 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         return record is null ? null : RestoreConfiguration(record);
     }
 
+    public async Task<IReadOnlyCollection<MachineOperation>> GetOrderedByWorkpieceIdAsync(
+        Guid workpieceId,
+        CancellationToken cancellationToken
+    )
+    {
+        List<MachineOperationRecord> records = await _dbContext
+            .MachineOperations.AsNoTracking()
+            .Where(operation => operation.WorkpieceId == workpieceId)
+            .OrderBy(operation => operation.SequenceNumber)
+            .ThenBy(operation => operation.Id)
+            .ToListAsync(cancellationToken);
+
+        return records.Select(RestoreOperation).ToArray();
+    }
+
+    public Task<bool> ExistsIncompletePredecessorAsync(
+        Guid workpieceId,
+        int sequenceNumber,
+        CancellationToken cancellationToken
+    )
+    {
+        return _dbContext.MachineOperations.AsNoTracking().AnyAsync(
+            operation =>
+                operation.WorkpieceId == workpieceId
+                && operation.SequenceNumber < sequenceNumber
+                && operation.Status != MachineOperationStatus.Completed,
+            cancellationToken
+        );
+    }
+
+    public async Task<MachineOperation?> GetFirstExecutableQueuedByWorkpieceIdAsync(
+        Guid workpieceId,
+        CancellationToken cancellationToken
+    )
+    {
+        MachineOperationRecord? record = await _dbContext
+            .MachineOperations.AsNoTracking()
+            .Where(operation =>
+                operation.WorkpieceId == workpieceId
+                && operation.Status == MachineOperationStatus.Queued
+            )
+            .OrderBy(operation => operation.SequenceNumber)
+            .ThenBy(operation => operation.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return record is null ? null : RestoreOperation(record);
+    }
+
+    public async Task<IReadOnlyCollection<MachineOperation>> GetRunningOperationsAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        List<MachineOperationRecord> records = await _dbContext
+            .MachineOperations.AsNoTracking()
+            .Where(operation => operation.Status == MachineOperationStatus.Running)
+            .OrderBy(operation => operation.WorkpieceId)
+            .ThenBy(operation => operation.SequenceNumber)
+            .ToListAsync(cancellationToken);
+
+        return records.Select(RestoreOperation).ToArray();
+    }
+
     public async Task AddAsync(
         MachineOperation operation,
         LaserCutConfiguration configuration,
@@ -138,24 +200,13 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<MachineOperation?> GetNextQueuedAsync(CancellationToken cancellationToken)
-    {
-        MachineOperationRecord? record = await _dbContext
-            .MachineOperations.AsNoTracking()
-            .Where(operation => operation.Status == MachineOperationStatus.Queued)
-            .OrderBy(operation => operation.CreatedAt)
-            .ThenBy(operation => operation.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return record is null ? null : RestoreOperation(record);
-    }
-
     private static MachineOperationRecord CreateOperationRecord(MachineOperation operation)
     {
         return new MachineOperationRecord
         {
             Id = operation.Id,
             WorkpieceId = operation.WorkpieceId,
+            SequenceNumber = operation.SequenceNumber,
             MachineId = operation.MachineId,
             Type = operation.Type,
             Status = operation.Status,
@@ -216,6 +267,7 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
         return MachineOperation.Restore(
             id: record.Id,
             workpieceId: record.WorkpieceId,
+            sequenceNumber: record.SequenceNumber,
             machineId: record.MachineId,
             type: record.Type,
             status: record.Status,

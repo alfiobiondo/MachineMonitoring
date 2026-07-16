@@ -1,5 +1,6 @@
 using MachineMonitoring.Application.Configuration;
 using MachineMonitoring.Application.Production;
+using MachineMonitoring.Application.Production.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -43,15 +44,19 @@ public sealed class MachineOperationSimulatorWorker : BackgroundService
                 MachineOperationSimulator simulator =
                     scope.ServiceProvider.GetRequiredService<MachineOperationSimulator>();
 
-                bool operationProcessed = await simulator.TryProcessNextAsync(stoppingToken);
+                IMachineOperationRepository repository =
+                    scope.ServiceProvider.GetRequiredService<IMachineOperationRepository>();
 
-                if (operationProcessed)
+                IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineOperation> runningOperations =
+                    await repository.GetRunningOperationsAsync(stoppingToken);
+
+                foreach (MachineMonitoring.Domain.Production.MachineOperation operation in runningOperations)
                 {
-                    continue;
+                    await simulator.ProcessRunningOperationAsync(operation, stoppingToken);
                 }
 
                 await Task.Delay(
-                    TimeSpan.FromSeconds(_options.PollingIntervalSeconds),
+                    TimeSpan.FromSeconds(_options.ProgressIntervalSeconds),
                     stoppingToken
                 );
             }
@@ -67,7 +72,7 @@ public sealed class MachineOperationSimulatorWorker : BackgroundService
                 );
 
                 await Task.Delay(
-                    TimeSpan.FromSeconds(_options.PollingIntervalSeconds),
+                    TimeSpan.FromSeconds(_options.ProgressIntervalSeconds),
                     stoppingToken
                 );
             }

@@ -14,7 +14,10 @@ public static class DependencyInjection
 
         services.AddSingleton<LaserCutConfigurationValidator>();
 
+        services.AddScoped<ProductionSequenceService>();
         services.AddScoped<MachineOperationApplicationService>();
+        services.AddScoped<WorkpieceApplicationService>();
+        services.AddScoped<ProductionLotApplicationService>();
 
         services.AddScoped<MachineOperationSimulator>();
 

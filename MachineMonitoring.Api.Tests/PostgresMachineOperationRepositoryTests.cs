@@ -30,10 +30,34 @@ public sealed class PostgresMachineOperationRepositoryTests
 
         IMachineOperationRepository repository =
             scope.ServiceProvider.GetRequiredService<IMachineOperationRepository>();
+        IProductionLotRepository productionLotRepository =
+            scope.ServiceProvider.GetRequiredService<IProductionLotRepository>();
+        IWorkpieceRepository workpieceRepository =
+            scope.ServiceProvider.GetRequiredService<IWorkpieceRepository>();
+
+        ProductionLot productionLot = new(
+            id: Guid.NewGuid(),
+            code: "LOT-TEST-001",
+            plannedQuantity: 1,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        Guid workpieceId = Guid.NewGuid();
+        Workpiece workpiece = new(
+            id: workpieceId,
+            productionLotId: productionLot.Id,
+            code: "WP-TEST-001",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        await productionLotRepository.AddAsync(productionLot, CancellationToken.None);
+        await workpieceRepository.AddAsync(workpiece, CancellationToken.None);
 
         MachineOperation operation = new(
             id: Guid.NewGuid(),
-            workpieceId: Guid.NewGuid(),
+            workpieceId: workpieceId,
+            sequenceNumber: 1,
             machineId: "M-TEST-001",
             type: MachineOperationType.LaserCutting,
             createdAt: DateTimeOffset.UtcNow

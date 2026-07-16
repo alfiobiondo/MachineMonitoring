@@ -4,6 +4,7 @@ namespace MachineMonitoring.Api.Operations;
 
 public sealed record CreateMachineOperationRequest(
     Guid WorkpieceId,
+    int SequenceNumber,
     string MachineId,
     Guid MaterialId,
     Guid NozzleId,

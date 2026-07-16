@@ -17,6 +17,8 @@ public sealed class MachineMonitoringDbContext : DbContext
         Set<MachineCapabilityNozzleRecord>();
     public DbSet<MachineCapabilityGeometryTypeRecord> MachineCapabilityGeometryTypes =>
         Set<MachineCapabilityGeometryTypeRecord>();
+    public DbSet<ProductionLotRecord> ProductionLots => Set<ProductionLotRecord>();
+    public DbSet<WorkpieceRecord> Workpieces => Set<WorkpieceRecord>();
     public DbSet<MachineOperationRecord> MachineOperations => Set<MachineOperationRecord>();
     public DbSet<LaserCutConfigurationRecord> LaserCutConfigurations =>
         Set<LaserCutConfigurationRecord>();
@@ -32,6 +34,8 @@ public sealed class MachineMonitoringDbContext : DbContext
         ConfigureNozzle(modelBuilder);
         ConfigureDrawingFile(modelBuilder);
         ConfigureMachineCapabilities(modelBuilder);
+        ConfigureProductionLot(modelBuilder);
+        ConfigureWorkpiece(modelBuilder);
         ConfigureMachineOperation(modelBuilder);
         ConfigureLaserCutConfiguration(modelBuilder);
     }
@@ -312,6 +316,11 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .IsRequired();
 
             entity
+                .Property(operation => operation.SequenceNumber)
+                .HasColumnName("sequence_number")
+                .IsRequired();
+
+            entity
                 .Property(operation => operation.MachineId)
                 .HasColumnName("machine_id")
                 .HasMaxLength(50)
@@ -358,6 +367,21 @@ public sealed class MachineMonitoringDbContext : DbContext
             entity.HasIndex(operation => operation.MachineId);
 
             entity.HasIndex(operation => operation.Status);
+
+            entity.HasIndex(operation => new { operation.WorkpieceId, operation.SequenceNumber }).IsUnique();
+
+            entity.HasIndex(operation => new
+            {
+                operation.WorkpieceId,
+                operation.Status,
+                operation.SequenceNumber,
+            });
+
+            entity
+                .HasOne(operation => operation.Workpiece)
+                .WithMany(workpiece => workpiece.Operations)
+                .HasForeignKey(operation => operation.WorkpieceId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
@@ -492,6 +516,86 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(configuration => configuration.DrawingFileId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureProductionLot(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ProductionLotRecord>(entity =>
+        {
+            entity.ToTable("production_lots");
+
+            entity.HasKey(lot => lot.Id);
+
+            entity.Property(lot => lot.Id).HasColumnName("id");
+
+            entity.Property(lot => lot.Code).HasColumnName("code").HasMaxLength(100).IsRequired();
+
+            entity.Property(lot => lot.PlannedQuantity).HasColumnName("planned_quantity").IsRequired();
+
+            entity
+                .Property(lot => lot.Status)
+                .HasColumnName("status")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(lot => lot.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(lot => lot.StartedAt).HasColumnName("started_at");
+            entity.Property(lot => lot.CompletedAt).HasColumnName("completed_at");
+
+            entity.HasIndex(lot => lot.Code).IsUnique();
+            entity.HasIndex(lot => lot.Status);
+        });
+    }
+
+    private static void ConfigureWorkpiece(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WorkpieceRecord>(entity =>
+        {
+            entity.ToTable("workpieces");
+
+            entity.HasKey(workpiece => workpiece.Id);
+
+            entity.Property(workpiece => workpiece.Id).HasColumnName("id");
+
+            entity
+                .Property(workpiece => workpiece.ProductionLotId)
+                .HasColumnName("production_lot_id")
+                .IsRequired();
+
+            entity.Property(workpiece => workpiece.Code).HasColumnName("code").HasMaxLength(100).IsRequired();
+
+            entity
+                .Property(workpiece => workpiece.MaterialCode)
+                .HasColumnName("material_code")
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity
+                .Property(workpiece => workpiece.Status)
+                .HasColumnName("status")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(workpiece => workpiece.IsSequenceActive)
+                .HasColumnName("is_sequence_active")
+                .IsRequired();
+
+            entity.Property(workpiece => workpiece.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(workpiece => workpiece.StartedAt).HasColumnName("started_at");
+            entity.Property(workpiece => workpiece.CompletedAt).HasColumnName("completed_at");
+
+            entity.HasIndex(workpiece => workpiece.ProductionLotId);
+            entity.HasIndex(workpiece => workpiece.Status);
+
+            entity
+                .HasOne(workpiece => workpiece.ProductionLot)
+                .WithMany(lot => lot.Workpieces)
+                .HasForeignKey(workpiece => workpiece.ProductionLotId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

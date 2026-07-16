@@ -3,7 +3,8 @@ namespace MachineMonitoring.Domain.Production;
 public enum ProductionLotStatus
 {
     Planned,
-    InProgress,
+    Running,
     Completed,
+    Failed,
     Cancelled,
 }

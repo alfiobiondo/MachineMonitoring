@@ -394,6 +394,10 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("progress_percentage");
 
+                    b.Property<int>("SequenceNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence_number");
+
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
@@ -420,7 +424,111 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("WorkpieceId", "SequenceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("WorkpieceId", "Status", "SequenceNumber");
+
                     b.ToTable("machine_operations", (string)null);
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("PlannedQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("planned_quantity");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("production_lots", (string)null);
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsSequenceActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_sequence_active");
+
+                    b.Property<string>("MaterialCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("material_code");
+
+                    b.Property<Guid>("ProductionLotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("production_lot_id");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductionLotId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("workpieces", (string)null);
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.LaserCutConfigurationRecord", b =>
@@ -491,6 +599,28 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("MachineCapabilities");
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
+                {
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", "Workpiece")
+                        .WithMany("Operations")
+                        .HasForeignKey("WorkpieceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workpiece");
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", b =>
+                {
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", "ProductionLot")
+                        .WithMany("Workpieces")
+                        .HasForeignKey("ProductionLotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ProductionLot");
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", b =>
                 {
                     b.Navigation("SupportedGeometryTypes");
@@ -503,6 +633,16 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
                 {
                     b.Navigation("LaserCutConfiguration");
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", b =>
+                {
+                    b.Navigation("Workpieces");
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", b =>
+                {
+                    b.Navigation("Operations");
                 });
 #pragma warning restore 612, 618
         }

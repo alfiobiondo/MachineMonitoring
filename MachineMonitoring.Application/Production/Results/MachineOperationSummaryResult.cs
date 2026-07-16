@@ -1,0 +1,18 @@
+using MachineMonitoring.Domain.Production;
+
+namespace MachineMonitoring.Application.Production.Results;
+
+public sealed record MachineOperationSummaryResult(
+    Guid Id,
+    Guid WorkpieceId,
+    int SequenceNumber,
+    string MachineId,
+    MachineOperationType Type,
+    MachineOperationStatus Status,
+    int ProgressPercentage,
+    string? CurrentPhase,
+    string? FailureReason,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt
+);

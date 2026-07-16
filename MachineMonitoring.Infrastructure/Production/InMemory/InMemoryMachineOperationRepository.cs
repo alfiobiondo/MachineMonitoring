@@ -112,6 +112,85 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyCollection<MachineOperation>> GetOrderedByWorkpieceIdAsync(
+        Guid workpieceId,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            IReadOnlyCollection<MachineOperation> operations = _operations
+                .Values.Where(operation => operation.WorkpieceId == workpieceId)
+                .OrderBy(operation => operation.SequenceNumber)
+                .ThenBy(operation => operation.Id)
+                .ToArray();
+
+            return Task.FromResult(operations);
+        }
+    }
+
+    public Task<bool> ExistsIncompletePredecessorAsync(
+        Guid workpieceId,
+        int sequenceNumber,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            bool exists = _operations.Values.Any(operation =>
+                operation.WorkpieceId == workpieceId
+                && operation.SequenceNumber < sequenceNumber
+                && operation.Status != MachineOperationStatus.Completed
+            );
+
+            return Task.FromResult(exists);
+        }
+    }
+
+    public Task<MachineOperation?> GetFirstExecutableQueuedByWorkpieceIdAsync(
+        Guid workpieceId,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            MachineOperation? operation = _operations
+                .Values.Where(operation =>
+                    operation.WorkpieceId == workpieceId
+                    && operation.Status == MachineOperationStatus.Queued
+                )
+                .OrderBy(operation => operation.SequenceNumber)
+                .ThenBy(operation => operation.Id)
+                .FirstOrDefault();
+
+            return Task.FromResult(operation);
+        }
+    }
+
+    public Task<IReadOnlyCollection<MachineOperation>> GetRunningOperationsAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            IReadOnlyCollection<MachineOperation> operations = _operations
+                .Values.Where(operation => operation.Status == MachineOperationStatus.Running)
+                .OrderBy(operation => operation.WorkpieceId)
+                .ThenBy(operation => operation.SequenceNumber)
+                .ToArray();
+
+            return Task.FromResult(operations);
+        }
+    }
+
     public Task UpdateAsync(MachineOperation operation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
@@ -146,22 +225,6 @@ public sealed class InMemoryMachineOperationRepository : IMachineOperationReposi
             );
 
             return Task.FromResult(configuration);
-        }
-    }
-
-    public Task<MachineOperation?> GetNextQueuedAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_syncRoot)
-        {
-            MachineOperation? operation = _operations
-                .Values.Where(operation => operation.Status == MachineOperationStatus.Queued)
-                .OrderBy(operation => operation.CreatedAt)
-                .ThenBy(operation => operation.Id)
-                .FirstOrDefault();
-
-            return Task.FromResult(operation);
         }
     }
 }

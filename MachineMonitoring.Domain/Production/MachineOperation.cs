@@ -8,6 +8,8 @@ public sealed class MachineOperation
 
     public Guid WorkpieceId { get; }
 
+    public int SequenceNumber { get; }
+
     public string MachineId { get; }
 
     public MachineOperationType Type { get; }
@@ -29,6 +31,7 @@ public sealed class MachineOperation
     public MachineOperation(
         Guid id,
         Guid workpieceId,
+        int sequenceNumber,
         string machineId,
         MachineOperationType type,
         DateTimeOffset createdAt
@@ -44,10 +47,19 @@ public sealed class MachineOperation
             throw new ArgumentException("The workpiece ID cannot be empty.", nameof(workpieceId));
         }
 
+        if (sequenceNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sequenceNumber),
+                "The sequence number must be greater than zero."
+            );
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
 
         Id = id;
         WorkpieceId = workpieceId;
+        SequenceNumber = sequenceNumber;
         MachineId = machineId;
         Type = type;
         CreatedAt = createdAt;
@@ -169,6 +181,7 @@ public sealed class MachineOperation
     public static MachineOperation Restore(
         Guid id,
         Guid workpieceId,
+        int sequenceNumber,
         string machineId,
         MachineOperationType type,
         MachineOperationStatus status,
@@ -183,6 +196,7 @@ public sealed class MachineOperation
         MachineOperation operation = new(
             id: id,
             workpieceId: workpieceId,
+            sequenceNumber: sequenceNumber,
             machineId: machineId,
             type: type,
             createdAt: createdAt

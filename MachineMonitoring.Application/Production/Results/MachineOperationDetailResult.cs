@@ -5,6 +5,7 @@ namespace MachineMonitoring.Application.Production.Results;
 public sealed record MachineOperationDetailsResult(
     Guid Id,
     Guid WorkpieceId,
+    int SequenceNumber,
     string MachineId,
     MachineOperationType Type,
     MachineOperationStatus Status,

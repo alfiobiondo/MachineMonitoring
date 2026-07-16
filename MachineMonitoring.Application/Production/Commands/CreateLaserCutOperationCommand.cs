@@ -4,6 +4,7 @@ namespace MachineMonitoring.Application.Production.Commands;
 
 public sealed record CreateLaserCutOperationCommand(
     Guid WorkpieceId,
+    int SequenceNumber,
     string MachineId,
     Guid MaterialId,
     Guid NozzleId,

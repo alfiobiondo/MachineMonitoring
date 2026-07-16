@@ -1,3 +1,5 @@
+using MachineMonitoring.Domain.Exceptions;
+
 namespace MachineMonitoring.Domain.Production;
 
 public sealed class Workpiece
@@ -12,7 +14,13 @@ public sealed class Workpiece
 
     public WorkpieceStatus Status { get; private set; }
 
+    public bool IsSequenceActive { get; private set; }
+
     public DateTimeOffset CreatedAt { get; }
+
+    public DateTimeOffset? StartedAt { get; private set; }
+
+    public DateTimeOffset? CompletedAt { get; private set; }
 
     public Workpiece(
         Guid id,
@@ -44,45 +52,61 @@ public sealed class Workpiece
         MaterialCode = materialCode;
         CreatedAt = createdAt;
         Status = WorkpieceStatus.Pending;
+        IsSequenceActive = false;
     }
 
-    public void Start()
+    public void StartSequence(DateTimeOffset startedAt)
     {
-        if (Status != WorkpieceStatus.Pending)
+        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
         {
-            throw new InvalidOperationException(
-                $"Workpiece {Code} cannot be started from status {Status}."
+            throw new BusinessRuleViolationException(
+                $"Workpiece {Code} cannot activate its sequence from status {Status}."
             );
         }
 
-        Status = WorkpieceStatus.InProgress;
+        IsSequenceActive = true;
+
+        if (Status == WorkpieceStatus.Pending)
+        {
+            Status = WorkpieceStatus.Running;
+            StartedAt = startedAt;
+        }
     }
 
-    public void Complete()
+    public void DeactivateSequence()
     {
-        if (Status != WorkpieceStatus.InProgress)
+        IsSequenceActive = false;
+    }
+
+    public void Complete(DateTimeOffset completedAt)
+    {
+        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot be completed from status {Status}."
             );
         }
 
         Status = WorkpieceStatus.Completed;
+        IsSequenceActive = false;
+        CompletedAt = completedAt;
     }
 
-    public void Fail()
+    public void Fail(DateTimeOffset failedAt)
     {
-        if (Status != WorkpieceStatus.InProgress)
+        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot fail from status {Status}."
             );
         }
 
         Status = WorkpieceStatus.Failed;
+        IsSequenceActive = false;
+        CompletedAt = failedAt;
     }
 
-    public void Cancel()
+    public void Cancel(DateTimeOffset cancelledAt)
     {
         if (
             Status
@@ -91,11 +115,41 @@ public sealed class Workpiece
                 or WorkpieceStatus.Cancelled
         )
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot be cancelled from status {Status}."
             );
         }
 
         Status = WorkpieceStatus.Cancelled;
+        IsSequenceActive = false;
+        CompletedAt = cancelledAt;
+    }
+
+    public static Workpiece Restore(
+        Guid id,
+        Guid productionLotId,
+        string code,
+        string materialCode,
+        WorkpieceStatus status,
+        bool isSequenceActive,
+        DateTimeOffset createdAt,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? completedAt
+    )
+    {
+        Workpiece workpiece = new(
+            id: id,
+            productionLotId: productionLotId,
+            code: code,
+            materialCode: materialCode,
+            createdAt: createdAt
+        );
+
+        workpiece.Status = status;
+        workpiece.IsSequenceActive = isSequenceActive;
+        workpiece.StartedAt = startedAt;
+        workpiece.CompletedAt = completedAt;
+
+        return workpiece;
     }
 }

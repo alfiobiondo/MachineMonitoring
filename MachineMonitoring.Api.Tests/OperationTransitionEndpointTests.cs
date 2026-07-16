@@ -21,6 +21,8 @@ public sealed class OperationTransitionEndpointTests
         _client = factory.CreateClient();
 
         _factory.MachineOperationRepository.Clear();
+        _factory.WorkpieceRepository.Clear();
+        _factory.ProductionLotRepository.Clear();
     }
 
     [Fact]
@@ -56,11 +58,13 @@ public sealed class OperationTransitionEndpointTests
         MachineOperation operation = new(
             id: Guid.NewGuid(),
             workpieceId: Guid.NewGuid(),
+            sequenceNumber: 1,
             machineId: "M-001",
             type: MachineOperationType.LaserCutting,
             createdAt: DateTimeOffset.UtcNow
         );
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -89,6 +93,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateRunningOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -116,6 +121,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateQueuedOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         StartMachineOperationRequest request = new(InitialPhase: "Preparing laser");
@@ -138,6 +144,60 @@ public sealed class OperationTransitionEndpointTests
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
         Assert.Equal("Preparing laser", storedOperation.CurrentPhase);
         Assert.NotNull(storedOperation.StartedAt);
+
+        Workpiece? workpiece = await _factory.WorkpieceRepository.GetByIdAsync(
+            operation.WorkpieceId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(workpiece);
+        Assert.False(workpiece.IsSequenceActive);
+    }
+
+    [Fact]
+    public async Task StartOperation_WhenPreviousOperationIsNotCompleted_ReturnsUnprocessableEntity()
+    {
+        // Arrange
+        Guid workpieceId = Guid.NewGuid();
+        SeedHierarchy(workpieceId);
+
+        MachineOperation firstOperation = new(
+            id: Guid.NewGuid(),
+            workpieceId: workpieceId,
+            sequenceNumber: 1,
+            machineId: "M-001",
+            type: MachineOperationType.LaserCutting,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        MachineOperation secondOperation = new(
+            id: Guid.NewGuid(),
+            workpieceId: workpieceId,
+            sequenceNumber: 2,
+            machineId: "M-001",
+            type: MachineOperationType.LaserCutting,
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(1)
+        );
+
+        _factory.MachineOperationRepository.Seed(firstOperation);
+        _factory.MachineOperationRepository.Seed(secondOperation);
+
+        StartMachineOperationRequest request = new(InitialPhase: "Preparing laser");
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{secondOperation.Id}/start",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal("Business rule violation", problemDetails.Title);
+        Assert.Contains("previous operation", problemDetails.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -146,6 +206,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateRunningOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         StartMachineOperationRequest request = new(InitialPhase: "Restarting");
@@ -172,6 +233,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateRunningOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         UpdateMachineOperationProgressRequest request = new(
@@ -237,6 +299,7 @@ public sealed class OperationTransitionEndpointTests
 
         operation.UpdateProgress(progressPercentage: 75, currentPhase: "Finishing cut");
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -266,6 +329,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateRunningOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         FailMachineOperationRequest request = new(FailureReason: "Laser source unavailable");
@@ -295,6 +359,7 @@ public sealed class OperationTransitionEndpointTests
         // Arrange
         MachineOperation operation = CreateQueuedOperation();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -323,6 +388,7 @@ public sealed class OperationTransitionEndpointTests
 
         operation.Complete(DateTimeOffset.UtcNow);
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -349,6 +415,7 @@ public sealed class OperationTransitionEndpointTests
 
         operation.Pause();
 
+        SeedHierarchy(operation.WorkpieceId);
         _factory.MachineOperationRepository.Seed(operation);
 
         // Act
@@ -374,6 +441,7 @@ public sealed class OperationTransitionEndpointTests
         return new MachineOperation(
             id: Guid.NewGuid(),
             workpieceId: Guid.NewGuid(),
+            sequenceNumber: 1,
             machineId: "M-001",
             type: MachineOperationType.LaserCutting,
             createdAt: DateTimeOffset.UtcNow
@@ -387,5 +455,26 @@ public sealed class OperationTransitionEndpointTests
         operation.Start(startedAt: DateTimeOffset.UtcNow, initialPhase: "Preparing laser");
 
         return operation;
+    }
+
+    private void SeedHierarchy(Guid workpieceId)
+    {
+        ProductionLot productionLot = new(
+            id: Guid.NewGuid(),
+            code: $"LOT-{workpieceId:N}",
+            plannedQuantity: 1,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        Workpiece workpiece = new(
+            id: workpieceId,
+            productionLotId: productionLot.Id,
+            code: $"WP-{workpieceId:N}",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        _factory.ProductionLotRepository.Seed(productionLot);
+        _factory.WorkpieceRepository.Seed(workpiece);
     }
 }

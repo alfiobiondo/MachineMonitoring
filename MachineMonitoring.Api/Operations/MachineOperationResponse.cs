@@ -3,6 +3,7 @@ namespace MachineMonitoring.Api.Operations;
 public sealed record MachineOperationResponse(
     Guid Id,
     Guid WorkpieceId,
+    int SequenceNumber,
     string MachineId,
     string Type,
     string Status,

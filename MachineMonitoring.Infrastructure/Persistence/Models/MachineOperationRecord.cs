@@ -8,6 +8,8 @@ public sealed class MachineOperationRecord
 
     public Guid WorkpieceId { get; set; }
 
+    public int SequenceNumber { get; set; }
+
     public string MachineId { get; set; } = string.Empty;
 
     public MachineOperationType Type { get; set; }
@@ -25,6 +27,8 @@ public sealed class MachineOperationRecord
     public DateTimeOffset? StartedAt { get; set; }
 
     public DateTimeOffset? CompletedAt { get; set; }
+
+    public WorkpieceRecord Workpiece { get; set; } = null!;
 
     public LaserCutConfigurationRecord? LaserCutConfiguration { get; set; }
 }

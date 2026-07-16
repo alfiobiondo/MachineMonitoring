@@ -4,6 +4,7 @@ using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
 using MachineMonitoring.Api.HealthChecks;
 using MachineMonitoring.Api.Operations;
+using MachineMonitoring.Api.Production;
 using MachineMonitoring.Application;
 using MachineMonitoring.Application.Common;
 using MachineMonitoring.Application.Exceptions;
@@ -169,6 +170,7 @@ app.MapPost(
 
             CreateLaserCutOperationCommand command = new(
                 WorkpieceId: request.WorkpieceId,
+                SequenceNumber: request.SequenceNumber,
                 MachineId: request.MachineId,
                 MaterialId: request.MaterialId,
                 NozzleId: request.NozzleId,
@@ -190,6 +192,7 @@ app.MapPost(
             CreateMachineOperationResponse response = new(
                 OperationId: result.OperationId,
                 ConfigurationId: result.ConfigurationId,
+                SequenceNumber: result.SequenceNumber,
                 OperationStatus: result.OperationStatus.ToString(),
                 GeometryType: result.GeometryType.ToString()
             );
@@ -203,6 +206,88 @@ app.MapPost(
     )
     .WithName("CreateMachineOperation")
     .WithTags("Operations");
+
+app.MapPost(
+        "/api/workpieces/{workpieceId:guid}/start",
+        async (
+            Guid workpieceId,
+            StartWorkpieceRequest request,
+            WorkpieceApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            StartWorkpieceCommand command = new(
+                WorkpieceId: workpieceId,
+                InitialPhase: request.InitialPhase
+            );
+
+            await service.StartAsync(command, cancellationToken);
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("StartWorkpiece")
+    .WithTags("Production");
+
+app.MapPost(
+        "/api/production-lots/{productionLotId:guid}/start",
+        async (
+            Guid productionLotId,
+            StartProductionLotRequest request,
+            ProductionLotApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            StartProductionLotCommand command = new(
+                ProductionLotId: productionLotId,
+                InitialPhase: request.InitialPhase
+            );
+
+            await service.StartAsync(command, cancellationToken);
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("StartProductionLot")
+    .WithTags("Production");
+
+app.MapGet(
+        "/api/workpieces/{workpieceId:guid}",
+        async (
+            Guid workpieceId,
+            WorkpieceApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            WorkpieceDetailsResult result = await service.GetDetailsAsync(
+                workpieceId,
+                cancellationToken
+            );
+
+            return Results.Ok(CreateWorkpieceDetailsResponse(result));
+        }
+    )
+    .WithName("GetWorkpiece")
+    .WithTags("Production");
+
+app.MapGet(
+        "/api/production-lots/{productionLotId:guid}",
+        async (
+            Guid productionLotId,
+            ProductionLotApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            ProductionLotDetailsResult result = await service.GetDetailsAsync(
+                productionLotId,
+                cancellationToken
+            );
+
+            return Results.Ok(CreateProductionLotDetailsResponse(result));
+        }
+    )
+    .WithName("GetProductionLot")
+    .WithTags("Production");
 
 app.MapPost(
         "/api/operations/{operationId:guid}/start",
@@ -540,6 +625,7 @@ static MachineOperationDetailsResponse CreateOperationDetailsResponse(
     return new MachineOperationDetailsResponse(
         Id: result.Id,
         WorkpieceId: result.WorkpieceId,
+        SequenceNumber: result.SequenceNumber,
         MachineId: result.MachineId,
         Type: result.Type.ToString(),
         Status: result.Status.ToString(),
@@ -589,6 +675,7 @@ static MachineOperationResponse CreateOperationResponse(MachineOperation operati
     return new MachineOperationResponse(
         Id: operation.Id,
         WorkpieceId: operation.WorkpieceId,
+        SequenceNumber: operation.SequenceNumber,
         MachineId: operation.MachineId,
         Type: operation.Type.ToString(),
         Status: operation.Status.ToString(),
@@ -598,6 +685,53 @@ static MachineOperationResponse CreateOperationResponse(MachineOperation operati
         CreatedAt: operation.CreatedAt,
         StartedAt: operation.StartedAt,
         CompletedAt: operation.CompletedAt
+    );
+}
+
+static WorkpieceDetailsResponse CreateWorkpieceDetailsResponse(WorkpieceDetailsResult result)
+{
+    return new WorkpieceDetailsResponse(
+        Id: result.Id,
+        ProductionLotId: result.ProductionLotId,
+        Code: result.Code,
+        MaterialCode: result.MaterialCode,
+        Status: result.Status.ToString(),
+        IsSequenceActive: result.IsSequenceActive,
+        CreatedAt: result.CreatedAt,
+        StartedAt: result.StartedAt,
+        CompletedAt: result.CompletedAt,
+        Operations: result
+            .Operations.Select(operation => new MachineOperationResponse(
+                Id: operation.Id,
+                WorkpieceId: operation.WorkpieceId,
+                SequenceNumber: operation.SequenceNumber,
+                MachineId: operation.MachineId,
+                Type: operation.Type.ToString(),
+                Status: operation.Status.ToString(),
+                ProgressPercentage: operation.ProgressPercentage,
+                CurrentPhase: operation.CurrentPhase,
+                FailureReason: operation.FailureReason,
+                CreatedAt: operation.CreatedAt,
+                StartedAt: operation.StartedAt,
+                CompletedAt: operation.CompletedAt
+            ))
+            .ToArray()
+    );
+}
+
+static ProductionLotDetailsResponse CreateProductionLotDetailsResponse(
+    ProductionLotDetailsResult result
+)
+{
+    return new ProductionLotDetailsResponse(
+        Id: result.Id,
+        Code: result.Code,
+        PlannedQuantity: result.PlannedQuantity,
+        Status: result.Status.ToString(),
+        CreatedAt: result.CreatedAt,
+        StartedAt: result.StartedAt,
+        CompletedAt: result.CompletedAt,
+        Workpieces: result.Workpieces.Select(CreateWorkpieceDetailsResponse).ToArray()
     );
 }
 

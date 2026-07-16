@@ -20,6 +20,8 @@ public sealed class OperationListEndpointTests
         _client = factory.CreateClient();
 
         _factory.MachineOperationRepository.Clear();
+        _factory.WorkpieceRepository.Clear();
+        _factory.ProductionLotRepository.Clear();
     }
 
     [Fact]
@@ -60,6 +62,8 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(firstOperation);
 
         _factory.MachineOperationRepository.Seed(secondOperation);
+        SeedHierarchy(firstOperation.WorkpieceId);
+        SeedHierarchy(secondOperation.WorkpieceId);
 
         // Act
         HttpResponseMessage response = await _client.GetAsync("/api/operations");
@@ -94,6 +98,8 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(olderOperation);
 
         _factory.MachineOperationRepository.Seed(newerOperation);
+        SeedHierarchy(olderOperation.WorkpieceId);
+        SeedHierarchy(newerOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -129,6 +135,8 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(firstMachineOperation);
 
         _factory.MachineOperationRepository.Seed(secondMachineOperation);
+        SeedHierarchy(firstMachineOperation.WorkpieceId);
+        SeedHierarchy(secondMachineOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -177,6 +185,9 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(runningOperation);
 
         _factory.MachineOperationRepository.Seed(completedOperation);
+        SeedHierarchy(queuedOperation.WorkpieceId);
+        SeedHierarchy(runningOperation.WorkpieceId);
+        SeedHierarchy(completedOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -223,6 +234,9 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(wrongMachineOperation);
 
         _factory.MachineOperationRepository.Seed(wrongStatusOperation);
+        SeedHierarchy(matchingOperation.WorkpieceId);
+        SeedHierarchy(wrongMachineOperation.WorkpieceId);
+        SeedHierarchy(wrongStatusOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -263,6 +277,9 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(middleOperation);
 
         _factory.MachineOperationRepository.Seed(newestOperation);
+        SeedHierarchy(oldestOperation.WorkpieceId);
+        SeedHierarchy(middleOperation.WorkpieceId);
+        SeedHierarchy(newestOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -312,6 +329,9 @@ public sealed class OperationListEndpointTests
         _factory.MachineOperationRepository.Seed(middleOperation);
 
         _factory.MachineOperationRepository.Seed(newestOperation);
+        SeedHierarchy(oldestOperation.WorkpieceId);
+        SeedHierarchy(middleOperation.WorkpieceId);
+        SeedHierarchy(newestOperation.WorkpieceId);
 
         // Act
         PagedResponse<MachineOperationResponse>? result = await _client.GetFromJsonAsync<
@@ -351,9 +371,31 @@ public sealed class OperationListEndpointTests
         return new MachineOperation(
             id: Guid.NewGuid(),
             workpieceId: Guid.NewGuid(),
+            sequenceNumber: 1,
             machineId: machineId,
             type: MachineOperationType.LaserCutting,
             createdAt: createdAt
         );
+    }
+
+    private void SeedHierarchy(Guid workpieceId)
+    {
+        ProductionLot productionLot = new(
+            id: Guid.NewGuid(),
+            code: $"LOT-{workpieceId:N}",
+            plannedQuantity: 1,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        Workpiece workpiece = new(
+            id: workpieceId,
+            productionLotId: productionLot.Id,
+            code: $"WP-{workpieceId:N}",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        _factory.ProductionLotRepository.Seed(productionLot);
+        _factory.WorkpieceRepository.Seed(workpiece);
     }
 }

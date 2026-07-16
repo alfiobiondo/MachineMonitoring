@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using MachineMonitoring.Api.Operations;
+using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,6 +19,12 @@ public sealed class OperationCreationEndpointTests
 
     private static readonly Guid DrawingFileId = Guid.Parse("30000000-0000-0000-0000-000000000001");
 
+    private static readonly Guid ProductionLotId = Guid.Parse(
+        "40000000-0000-0000-0000-000000000001"
+    );
+
+    private static readonly Guid WorkpieceId = Guid.Parse("50000000-0000-0000-0000-000000000001");
+
     public OperationCreationEndpointTests(CustomWebApplicationFactory factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -26,6 +33,8 @@ public sealed class OperationCreationEndpointTests
         _client = factory.CreateClient();
 
         _factory.MachineOperationRepository.Clear();
+        _factory.WorkpieceRepository.Clear();
+        _factory.ProductionLotRepository.Clear();
         _factory.ProductionCatalog.Clear();
     }
 
@@ -34,6 +43,7 @@ public sealed class OperationCreationEndpointTests
     {
         // Arrange
         SeedValidCatalog();
+        SeedProductionHierarchy();
 
         CreateMachineOperationRequest request = CreateValidRequest();
 
@@ -83,6 +93,7 @@ public sealed class OperationCreationEndpointTests
     {
         // Arrange
         SeedValidCatalog();
+        SeedProductionHierarchy();
 
         CreateMachineOperationRequest validRequest = CreateValidRequest();
 
@@ -117,6 +128,7 @@ public sealed class OperationCreationEndpointTests
     {
         // Arrange
         SeedValidCatalog();
+        SeedProductionHierarchy();
 
         CreateMachineOperationRequest validRequest = CreateValidRequest();
 
@@ -139,6 +151,7 @@ public sealed class OperationCreationEndpointTests
     {
         // Arrange
         SeedValidCatalog();
+        SeedProductionHierarchy();
 
         CreateMachineOperationRequest validRequest = CreateValidRequest();
 
@@ -205,10 +218,32 @@ public sealed class OperationCreationEndpointTests
         _factory.ProductionCatalog.SeedCapabilities(capabilities);
     }
 
+    private void SeedProductionHierarchy()
+    {
+        ProductionLot productionLot = new(
+            id: ProductionLotId,
+            code: "LOT-001",
+            plannedQuantity: 1,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        Workpiece workpiece = new(
+            id: WorkpieceId,
+            productionLotId: productionLot.Id,
+            code: "WP-001",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        _factory.ProductionLotRepository.Seed(productionLot);
+        _factory.WorkpieceRepository.Seed(workpiece);
+    }
+
     private static CreateMachineOperationRequest CreateValidRequest()
     {
         return new CreateMachineOperationRequest(
-            WorkpieceId: Guid.NewGuid(),
+            WorkpieceId: WorkpieceId,
+            SequenceNumber: 1,
             MachineId: "M-001",
             MaterialId: MaterialId,
             NozzleId: NozzleId,

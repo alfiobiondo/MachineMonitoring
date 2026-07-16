@@ -1,4 +1,5 @@
 using MachineMonitoring.Application.Production.Repositories;
+using MachineMonitoring.Application.Production;
 using MachineMonitoring.Infrastructure.HealthChecks;
 using MachineMonitoring.Infrastructure.Persistence;
 using MachineMonitoring.Infrastructure.Persistence.Repositories;
@@ -38,6 +39,9 @@ public static class DependencyInjection
             );
 
         services.AddScoped<ProductionDatabaseSeeder>();
+        services.AddScoped<IProductionTransactionManager, EfCoreProductionTransactionManager>();
+        services.AddScoped<IProductionLotRepository, PostgresProductionLotRepository>();
+        services.AddScoped<IWorkpieceRepository, PostgresWorkpieceRepository>();
 
         services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 

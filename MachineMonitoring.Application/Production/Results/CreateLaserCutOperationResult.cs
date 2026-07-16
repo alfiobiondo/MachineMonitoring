@@ -6,6 +6,7 @@ namespace MachineMonitoring.Application.Production.Results;
 public sealed record CreateLaserCutOperationResult(
     Guid OperationId,
     Guid ConfigurationId,
+    int SequenceNumber,
     MachineOperationStatus OperationStatus,
     WorkpieceGeometryType GeometryType
 );
