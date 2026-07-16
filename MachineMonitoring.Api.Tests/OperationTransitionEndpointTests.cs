@@ -1,12 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using MachineMonitoring.Api.Operations;
 using MachineMonitoring.Domain.Production;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MachineMonitoring.Api.Tests;
 
-public sealed class OperationTransitionEndpointTests : IClassFixture<CustomWebApplicationFactory>
+[Collection(ApiTestCollection.Name)]
+public sealed class OperationTransitionEndpointTests
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly HttpClient _client;
@@ -85,15 +87,7 @@ public sealed class OperationTransitionEndpointTests : IClassFixture<CustomWebAp
     public async Task PauseOperation_WhenOperationIsRunning_ReturnsNoContent()
     {
         // Arrange
-        MachineOperation operation = new(
-            id: Guid.NewGuid(),
-            workpieceId: Guid.NewGuid(),
-            machineId: "M-001",
-            type: MachineOperationType.LaserCutting,
-            createdAt: DateTimeOffset.UtcNow
-        );
-
-        operation.Start(startedAt: DateTimeOffset.UtcNow, initialPhase: "Preparing laser");
+        MachineOperation operation = CreateRunningOperation();
 
         _factory.MachineOperationRepository.Seed(operation);
 
@@ -114,5 +108,284 @@ public sealed class OperationTransitionEndpointTests : IClassFixture<CustomWebAp
         Assert.NotNull(storedOperation);
 
         Assert.Equal(MachineOperationStatus.Paused, storedOperation.Status);
+    }
+
+    [Fact]
+    public async Task StartOperation_WhenOperationIsQueued_ReturnsNoContent()
+    {
+        // Arrange
+        MachineOperation operation = CreateQueuedOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        StartMachineOperationRequest request = new(InitialPhase: "Preparing laser");
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/start",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+        Assert.Equal("Preparing laser", storedOperation.CurrentPhase);
+        Assert.NotNull(storedOperation.StartedAt);
+    }
+
+    [Fact]
+    public async Task StartOperation_WhenOperationIsRunning_ReturnsUnprocessableEntity()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        StartMachineOperationRequest request = new(InitialPhase: "Restarting");
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/start",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal("Business rule violation", problemDetails.Title);
+        Assert.Contains("cannot be started from status Running", problemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task UpdateProgress_WhenOperationIsRunning_UpdatesOperation()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        UpdateMachineOperationProgressRequest request = new(
+            ProgressPercentage: 35,
+            CurrentPhase: "Laser cutting"
+        );
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/progress",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+        Assert.Equal(35, storedOperation.ProgressPercentage);
+        Assert.Equal("Laser cutting", storedOperation.CurrentPhase);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(100)]
+    public async Task UpdateProgress_WithInvalidPercentage_ReturnsBadRequest(int progressPercentage)
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        UpdateMachineOperationProgressRequest request = new(
+            ProgressPercentage: progressPercentage,
+            CurrentPhase: "Laser cutting"
+        );
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/progress",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal("Invalid request", problemDetails.Title);
+    }
+
+    [Fact]
+    public async Task CompleteOperation_WhenOperationIsRunning_CompletesOperation()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        operation.UpdateProgress(progressPercentage: 75, currentPhase: "Finishing cut");
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsync(
+            $"/api/operations/{operation.Id}/complete",
+            content: null
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Completed, storedOperation.Status);
+        Assert.Equal(100, storedOperation.ProgressPercentage);
+        Assert.Equal("Completed", storedOperation.CurrentPhase);
+        Assert.NotNull(storedOperation.CompletedAt);
+    }
+
+    [Fact]
+    public async Task FailOperation_WhenOperationIsRunning_StoresFailureReason()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        FailMachineOperationRequest request = new(FailureReason: "Laser source unavailable");
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/fail",
+            request
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Failed, storedOperation.Status);
+        Assert.Equal("Laser source unavailable", storedOperation.FailureReason);
+    }
+
+    [Fact]
+    public async Task CancelOperation_WhenOperationIsQueued_CancelsOperation()
+    {
+        // Arrange
+        MachineOperation operation = CreateQueuedOperation();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsync(
+            $"/api/operations/{operation.Id}/cancel",
+            content: null
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Cancelled, storedOperation.Status);
+    }
+
+    [Fact]
+    public async Task CancelOperation_WhenOperationIsCompleted_ReturnsUnprocessableEntity()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        operation.Complete(DateTimeOffset.UtcNow);
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsync(
+            $"/api/operations/{operation.Id}/cancel",
+            content: null
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal("Business rule violation", problemDetails.Title);
+        Assert.Contains("cannot be cancelled from status Completed", problemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task ResumeOperation_WhenOperationIsPaused_ReturnsNoContent()
+    {
+        // Arrange
+        MachineOperation operation = CreateRunningOperation();
+
+        operation.Pause();
+
+        _factory.MachineOperationRepository.Seed(operation);
+
+        // Act
+        HttpResponseMessage response = await _client.PostAsync(
+            $"/api/operations/{operation.Id}/resume",
+            content: null
+        );
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+    }
+
+    private static MachineOperation CreateQueuedOperation()
+    {
+        return new MachineOperation(
+            id: Guid.NewGuid(),
+            workpieceId: Guid.NewGuid(),
+            machineId: "M-001",
+            type: MachineOperationType.LaserCutting,
+            createdAt: DateTimeOffset.UtcNow
+        );
+    }
+
+    private static MachineOperation CreateRunningOperation()
+    {
+        MachineOperation operation = CreateQueuedOperation();
+
+        operation.Start(startedAt: DateTimeOffset.UtcNow, initialPhase: "Preparing laser");
+
+        return operation;
     }
 }
