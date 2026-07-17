@@ -2,6 +2,7 @@ using MachineMonitoring.Application.Exceptions;
 using MachineMonitoring.Domain.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MachineMonitoring.Api.Errors;
 
@@ -41,7 +42,12 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
 
         httpContext.Response.StatusCode = statusCode;
 
-        await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+        await httpContext.Response.WriteAsJsonAsync(
+            problemDetails,
+            options: (System.Text.Json.JsonSerializerOptions?)null,
+            contentType: "application/problem+json",
+            cancellationToken: cancellationToken
+        );
 
         return true;
     }
@@ -68,6 +74,12 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 StatusCodes.Status422UnprocessableEntity,
                 "Business rule violation",
                 exception.Message
+            ),
+
+            DbUpdateConcurrencyException => (
+                StatusCodes.Status409Conflict,
+                "Concurrency conflict",
+                "The resource was modified by another request. Reload it and retry."
             ),
 
             _ => (
