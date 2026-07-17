@@ -118,7 +118,9 @@ public sealed class ProductionSequenceService
 
                 if (
                     startFromWorkpieceSequenceNumber is int requestedWorkpieceSequenceNumber
-                    && !workpieces.Any(item => item.SequenceNumber == requestedWorkpieceSequenceNumber)
+                    && !workpieces.Any(item =>
+                        item.SequenceNumber == requestedWorkpieceSequenceNumber
+                    )
                 )
                 {
                     throw new ResourceNotFoundException(
@@ -201,7 +203,8 @@ public sealed class ProductionSequenceService
                     operations.Count > 0
                     && operations.All(item =>
                         item.Status
-                        is MachineOperationStatus.Completed or MachineOperationStatus.Skipped
+                            is MachineOperationStatus.Completed
+                                or MachineOperationStatus.Skipped
                     )
                 )
                 {
@@ -238,7 +241,12 @@ public sealed class ProductionSequenceService
                 }
                 else if (operation.Status == MachineOperationStatus.Faulted)
                 {
-                    workpiece.DeactivateSequence();
+                    _logger.LogInformation(
+                        "Operation {OperationId} faulted. Workpiece {WorkpieceId} remains sequence-active: {IsSequenceActive}.",
+                        operation.Id,
+                        workpiece.Id,
+                        workpiece.IsSequenceActive
+                    );
                 }
                 else
                 {
@@ -359,9 +367,11 @@ public sealed class ProductionSequenceService
             );
         }
 
-        foreach (MachineOperation operation in operations.Where(item =>
-            item.SequenceNumber < startFromSequenceNumber
-        ))
+        foreach (
+            MachineOperation operation in operations.Where(item =>
+                item.SequenceNumber < startFromSequenceNumber
+            )
+        )
         {
             if (operation.Status == MachineOperationStatus.Queued)
             {
@@ -382,7 +392,8 @@ public sealed class ProductionSequenceService
 
             if (
                 operation.Status
-                is not MachineOperationStatus.Completed and not MachineOperationStatus.Skipped
+                is not MachineOperationStatus.Completed
+                    and not MachineOperationStatus.Skipped
             )
             {
                 throw new BusinessRuleViolationException(

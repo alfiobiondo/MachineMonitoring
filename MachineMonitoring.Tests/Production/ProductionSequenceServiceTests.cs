@@ -14,8 +14,10 @@ public sealed class ProductionSequenceServiceTests
     private readonly InMemoryWorkpieceRepository _workpieceRepository = new();
     private readonly InMemoryProductionLotRepository _productionLotRepository = new();
     private readonly InMemoryMachineOperationEventRepository _eventRepository;
+    private readonly InMemoryMachineAlarmRepository _alarmRepository = new();
     private readonly ProductionSequenceService _sequenceService;
     private readonly MachineOperationApplicationService _operationService;
+    private readonly MachineAlarmApplicationService _alarmService;
 
     public ProductionSequenceServiceTests()
     {
@@ -42,11 +44,18 @@ public sealed class ProductionSequenceServiceTests
             workpieceRepository: _workpieceRepository,
             machineOperationRepository: _operationRepository,
             machineOperationEventRepository: _eventRepository,
-            machineAlarmRepository: new InMemoryMachineAlarmRepository(),
+            machineAlarmRepository: _alarmRepository,
             transactionManager: new NoOpProductionTransactionManager(),
             productionSequenceService: _sequenceService,
             configurationValidator: new Domain.Technology.LaserCutConfigurationValidator(),
             logger: NullLogger<MachineOperationApplicationService>.Instance
+        );
+
+        _alarmService = new MachineAlarmApplicationService(
+            machineAlarmRepository: _alarmRepository,
+            machineOperationRepository: _operationRepository,
+            machineOperationEventRepository: _eventRepository,
+            transactionManager: new NoOpProductionTransactionManager()
         );
     }
 
@@ -388,6 +397,128 @@ public sealed class ProductionSequenceServiceTests
     }
 
     [Fact]
+    public async Task CompletingRecoveredOperation_WithActiveSequence_StartsNextQueuedOperation()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation first = CreateQueuedOperation(workpiece.Id, 1);
+        MachineOperation second = CreateQueuedOperation(workpiece.Id, 2);
+        SeedOperation(first);
+        SeedOperation(second);
+
+        await _sequenceService.StartWorkpieceAsync(
+            workpiece.Id,
+            "Preparing laser",
+            startFromSequenceNumber: null,
+            CancellationToken.None
+        );
+
+        await _operationService.FaultAsync(
+            new FaultMachineOperationCommand(
+                first.Id,
+                "Assist gas pressure drop",
+                "FAULT-001",
+                "Gas pressure below threshold",
+                MachineAlarmSeverity.Warning
+            ),
+            CancellationToken.None
+        );
+
+        MachineAlarm alarm = (await _alarmRepository.GetByOperationIdAsync(
+            first.Id,
+            CancellationToken.None
+        )).Single();
+
+        await _alarmService.ResolveAsync(
+            new ResolveMachineAlarmCommand(alarm.Id, "Pressure stabilized"),
+            CancellationToken.None
+        );
+
+        await _operationService.ResumeAsync(
+            new ResumeMachineOperationCommand(first.Id),
+            CancellationToken.None
+        );
+
+        await _operationService.CompleteAsync(
+            new CompleteMachineOperationCommand(first.Id),
+            CancellationToken.None
+        );
+
+        Workpiece? storedWorkpiece = await _workpieceRepository.GetByIdAsync(
+            workpiece.Id,
+            CancellationToken.None
+        );
+        MachineOperation? storedSecond = await _operationRepository.GetByIdAsync(
+            second.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedWorkpiece);
+        Assert.NotNull(storedSecond);
+        Assert.True(storedWorkpiece.IsSequenceActive);
+        Assert.Equal(MachineOperationStatus.Running, storedSecond.Status);
+    }
+
+    [Fact]
+    public async Task CompletingRecoveredOperation_WithPointStart_KeepsNextQueuedOperationQueued()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation first = CreateQueuedOperation(workpiece.Id, 1);
+        MachineOperation second = CreateQueuedOperation(workpiece.Id, 2);
+        SeedOperation(first);
+        SeedOperation(second);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(first.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+
+        await _operationService.FaultAsync(
+            new FaultMachineOperationCommand(
+                first.Id,
+                "Assist gas pressure drop",
+                "FAULT-002",
+                "Gas pressure below threshold",
+                MachineAlarmSeverity.Warning
+            ),
+            CancellationToken.None
+        );
+
+        MachineAlarm alarm = (await _alarmRepository.GetByOperationIdAsync(
+            first.Id,
+            CancellationToken.None
+        )).Single();
+
+        await _alarmService.ResolveAsync(
+            new ResolveMachineAlarmCommand(alarm.Id, "Pressure stabilized"),
+            CancellationToken.None
+        );
+
+        await _operationService.ResumeAsync(
+            new ResumeMachineOperationCommand(first.Id),
+            CancellationToken.None
+        );
+
+        await _operationService.CompleteAsync(
+            new CompleteMachineOperationCommand(first.Id),
+            CancellationToken.None
+        );
+
+        Workpiece? storedWorkpiece = await _workpieceRepository.GetByIdAsync(
+            workpiece.Id,
+            CancellationToken.None
+        );
+        MachineOperation? storedSecond = await _operationRepository.GetByIdAsync(
+            second.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedWorkpiece);
+        Assert.NotNull(storedSecond);
+        Assert.False(storedWorkpiece.IsSequenceActive);
+        Assert.Equal(MachineOperationStatus.Queued, storedSecond.Status);
+    }
+
+    [Fact]
     public async Task CompletingLastOperation_CompletesWorkpieceAndLot()
     {
         (ProductionLot lot, Workpiece workpiece) = await SeedHierarchyAsync();
@@ -649,24 +780,47 @@ public sealed class ProductionSequenceServiceTests
 
     private sealed class InMemoryMachineAlarmRepository : IMachineAlarmRepository
     {
+        private readonly Dictionary<Guid, MachineAlarm> _alarms = [];
+
         public Task<MachineAlarm?> GetByIdAsync(Guid alarmId, CancellationToken cancellationToken)
-            => Task.FromResult<MachineAlarm?>(null);
+            => Task.FromResult(
+                _alarms.TryGetValue(alarmId, out MachineAlarm? alarm) ? alarm : null
+            );
 
         public Task<IReadOnlyCollection<MachineAlarm>> GetByMachineIdAsync(
             string machineId,
             bool activeOnly,
             CancellationToken cancellationToken
-        ) => Task.FromResult<IReadOnlyCollection<MachineAlarm>>([]);
+        )
+        {
+            IEnumerable<MachineAlarm> query = _alarms.Values.Where(item => item.MachineId == machineId);
+
+            if (activeOnly)
+            {
+                query = query.Where(item => item.Status != MachineAlarmStatus.Resolved);
+            }
+
+            return Task.FromResult<IReadOnlyCollection<MachineAlarm>>(query.ToArray());
+        }
 
         public Task<IReadOnlyCollection<MachineAlarm>> GetByOperationIdAsync(
             Guid operationId,
             CancellationToken cancellationToken
-        ) => Task.FromResult<IReadOnlyCollection<MachineAlarm>>([]);
+        )
+            => Task.FromResult<IReadOnlyCollection<MachineAlarm>>(
+                _alarms.Values.Where(item => item.MachineOperationId == operationId).ToArray()
+            );
 
         public Task AddAsync(MachineAlarm alarm, CancellationToken cancellationToken)
-            => Task.CompletedTask;
+        {
+            _alarms[alarm.Id] = alarm;
+            return Task.CompletedTask;
+        }
 
         public Task UpdateAsync(MachineAlarm alarm, CancellationToken cancellationToken)
-            => Task.CompletedTask;
+        {
+            _alarms[alarm.Id] = alarm;
+            return Task.CompletedTask;
+        }
     }
 }
