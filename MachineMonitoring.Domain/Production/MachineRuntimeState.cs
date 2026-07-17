@@ -57,9 +57,10 @@ public sealed class MachineRuntimeState
     }
 
     public bool CanAcceptWork() =>
-        Status is MachineRuntimeStatus.Available
-            or MachineRuntimeStatus.Paused
-            or MachineRuntimeStatus.Running;
+        Status
+            is MachineRuntimeStatus.Available
+                or MachineRuntimeStatus.Paused
+                or MachineRuntimeStatus.Running;
 
     public void StartOperation(Guid operationId, DateTimeOffset changedAt)
     {
@@ -103,7 +104,12 @@ public sealed class MachineRuntimeState
         BumpVersion();
     }
 
-    public void Fault(Guid? operationId, Guid alarmId, string failureReason, DateTimeOffset changedAt)
+    public void Fault(
+        Guid? operationId,
+        Guid alarmId,
+        string failureReason,
+        DateTimeOffset changedAt
+    )
     {
         if (alarmId == Guid.Empty)
         {

@@ -114,8 +114,13 @@ public sealed class MachineAlarmApplicationService
 
                     if (!activeMachineAlarms.Any(MachineAlarmBlockingPolicy.IsBlocking))
                     {
+                        int expectedVersion = runtimeState.Version;
                         runtimeState.ResolveFault(operationId: null, DateTimeOffset.UtcNow);
-                        await _machineRuntimeStateRepository.UpdateAsync(runtimeState, ct);
+                        await _machineRuntimeStateRepository.UpdateAsync(
+                            runtimeState,
+                            expectedVersion,
+                            ct
+                        );
                     }
 
                     await _notificationPublisher.PublishAsync(
@@ -151,9 +156,14 @@ public sealed class MachineAlarmApplicationService
                 }
 
                 operation.RecoverFromFault();
+                int operationRuntimeExpectedVersion = runtimeState.Version;
                 runtimeState.ResolveFault(operationId: operation.Id, DateTimeOffset.UtcNow);
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await _machineRuntimeStateRepository.UpdateAsync(runtimeState, ct);
+                await _machineRuntimeStateRepository.UpdateAsync(
+                    runtimeState,
+                    operationRuntimeExpectedVersion,
+                    ct
+                );
                 MachineOperationEvent recoveredEvent = new(
                     id: Guid.NewGuid(),
                     machineOperationId: operation.Id,

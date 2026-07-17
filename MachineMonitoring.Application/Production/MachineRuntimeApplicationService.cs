@@ -119,10 +119,11 @@ public sealed class MachineRuntimeApplicationService
                     await _operationRepository.UpdateAsync(operation, ct);
                 }
 
+                int expectedVersion = state.Version;
                 state.Fault(command.OperationId, alarm.Id, command.Message, raisedAt);
 
                 await _alarmRepository.AddAsync(alarm, ct);
-                await SaveRuntimeStateAsync(state, ct);
+                await SaveRuntimeStateAsync(state, expectedVersion, ct);
 
                 if (operation is not null)
                 {
@@ -223,8 +224,9 @@ public sealed class MachineRuntimeApplicationService
             {
                 await GetRequiredMachineAsync(machineId, ct);
                 MachineRuntimeState state = await GetOrCreateRuntimeStateAsync(machineId, ct);
+                int expectedVersion = state.Version;
                 change(state);
-                await SaveRuntimeStateAsync(state, ct);
+                await SaveRuntimeStateAsync(state, expectedVersion, ct);
                 await _notificationPublisher.PublishAsync(
                     new MachineRuntimeStatusChangedNotification(
                         MachineId: state.MachineId,
@@ -299,10 +301,11 @@ public sealed class MachineRuntimeApplicationService
 
     private async Task SaveRuntimeStateAsync(
         MachineRuntimeState state,
+        int expectedVersion,
         CancellationToken cancellationToken
     )
     {
-        await _runtimeStateRepository.UpdateAsync(state, cancellationToken);
+        await _runtimeStateRepository.UpdateAsync(state, expectedVersion, cancellationToken);
     }
 
     private static MachineRuntimeStateResult ToStateResult(

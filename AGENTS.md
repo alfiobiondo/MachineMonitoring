@@ -675,6 +675,24 @@ tabelle che possono già contenere dati:
   perché esercitano migration, EF Core e repository reali tramite
   Testcontainers.
 
+#### 2026-07-17 - Concorrenza ottimistica di MachineRuntimeState
+
+- `MachineRuntimeState` usa concorrenza ottimistica EF Core tramite la colonna
+  `Version`.
+- Quando un application service legge e poi modifica un `MachineRuntimeState`,
+  deve catturare esplicitamente la versione letta prima delle mutazioni del
+  dominio.
+- `IMachineRuntimeStateRepository.UpdateAsync` riceve quindi:
+  - il nuovo stato;
+  - `expectedVersion`;
+  - `CancellationToken`.
+- Il repository PostgreSQL non deve dedurre la versione attesa con calcoli come
+  `state.Version - 1`.
+- In aggiornamento il repository deve impostare esplicitamente
+  `Entry(record).Property(x => x.Version).OriginalValue = expectedVersion`,
+  così un secondo salvataggio stale genera davvero
+  `DbUpdateConcurrencyException`.
+
 #### 2026-07-17 - Eventi operazione, allarmi macchina e start parziali
 
 - Lo storico delle `MachineOperation` è persistente e append-only tramite la

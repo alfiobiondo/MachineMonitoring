@@ -1,6 +1,6 @@
 using MachineMonitoring.Application.Exceptions;
-using MachineMonitoring.Application.Production.Notifications;
 using MachineMonitoring.Application.Production.Commands;
+using MachineMonitoring.Application.Production.Notifications;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Exceptions;
@@ -186,7 +186,10 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
 
                 await _productionSequenceService.EnsureOperationCanStartAsync(operation, ct);
 
@@ -199,11 +202,12 @@ public sealed class MachineOperationApplicationService
                 await EnsureMachineCanAcceptOperationAsync(runtimeState, operation, ct);
 
                 DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+                int expectedVersion = runtimeState.Version;
                 operation.Start(startedAt: startedAt, initialPhase: command.InitialPhase);
                 runtimeState.StartOperation(operation.Id, startedAt);
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Started,
@@ -232,18 +236,22 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
                     operation
                 );
 
+                int expectedVersion = runtimeState.Version;
                 operation.Pause();
                 runtimeState.PauseOperation(operation.Id, DateTimeOffset.UtcNow);
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Paused,
@@ -272,7 +280,10 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
@@ -281,11 +292,12 @@ public sealed class MachineOperationApplicationService
 
                 await EnsureMachineCanResumeOperationAsync(runtimeState, operation, ct);
 
+                int expectedVersion = runtimeState.Version;
                 operation.Resume();
                 runtimeState.ResumeOperation(operation.Id, DateTimeOffset.UtcNow);
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Resumed,
@@ -314,7 +326,10 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
@@ -368,7 +383,10 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
@@ -376,11 +394,12 @@ public sealed class MachineOperationApplicationService
                 );
 
                 DateTimeOffset completedAt = DateTimeOffset.UtcNow;
+                int expectedVersion = runtimeState.Version;
                 operation.Complete(completedAt: completedAt);
                 runtimeState.CompleteOperation(operation.Id, completedAt);
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Completed,
@@ -415,17 +434,25 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
                     operation
                 );
 
+                int expectedVersion = runtimeState.Version;
                 operation.Fail(failureReason: command.FailureReason);
 
-                IReadOnlyCollection<MachineAlarm> alarms = await _machineAlarmRepository
-                    .GetByMachineIdAsync(operation.MachineId, activeOnly: true, ct);
+                IReadOnlyCollection<MachineAlarm> alarms =
+                    await _machineAlarmRepository.GetByMachineIdAsync(
+                        operation.MachineId,
+                        activeOnly: true,
+                        ct
+                    );
 
                 if (alarms.Any(MachineAlarmBlockingPolicy.IsBlocking))
                 {
@@ -442,7 +469,7 @@ public sealed class MachineOperationApplicationService
                 }
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Failed,
@@ -477,18 +504,22 @@ public sealed class MachineOperationApplicationService
         await _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
                     operation
                 );
 
+                int expectedVersion = runtimeState.Version;
                 operation.Cancel();
                 runtimeState.SetAvailable(DateTimeOffset.UtcNow);
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Cancelled,
@@ -519,13 +550,17 @@ public sealed class MachineOperationApplicationService
         return _transactionManager.ExecuteAsync(
             async ct =>
             {
-                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+                MachineOperation operation = await GetRequiredOperationAsync(
+                    command.OperationId,
+                    ct
+                );
                 MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
                     operation.MachineId,
                     ct,
                     operation
                 );
 
+                int expectedVersion = runtimeState.Version;
                 operation.Fault(command.FailureReason);
                 MachineAlarm alarm = new(
                     id: Guid.NewGuid(),
@@ -546,7 +581,7 @@ public sealed class MachineOperationApplicationService
 
                 await _machineOperationRepository.UpdateAsync(operation, ct);
                 await _machineAlarmRepository.AddAsync(alarm, ct);
-                await SaveRuntimeStateAsync(runtimeState, ct);
+                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
                 await AppendEventAsync(
                     operation,
                     MachineOperationEventType.Faulted,
@@ -618,12 +653,15 @@ public sealed class MachineOperationApplicationService
             operation.MachineId,
             cancellationToken
         );
-        IReadOnlyCollection<MachineAlarm> activeAlarms = await _machineAlarmRepository.GetByMachineIdAsync(
-            operation.MachineId,
-            activeOnly: true,
-            cancellationToken
+        IReadOnlyCollection<MachineAlarm> activeAlarms =
+            await _machineAlarmRepository.GetByMachineIdAsync(
+                operation.MachineId,
+                activeOnly: true,
+                cancellationToken
+            );
+        MachineAlarm? activeBlockingAlarm = activeAlarms.FirstOrDefault(
+            MachineAlarmBlockingPolicy.IsBlocking
         );
-        MachineAlarm? activeBlockingAlarm = activeAlarms.FirstOrDefault(MachineAlarmBlockingPolicy.IsBlocking);
 
         WorkpieceGeometryDetailsResult geometry = CreateGeometryDetails(configuration.Geometry);
 
@@ -657,7 +695,9 @@ public sealed class MachineOperationApplicationService
             CurrentPhase: operation.CurrentPhase,
             FailureReason: operation.FailureReason,
             MachineRuntimeStatus: runtimeState.Status,
-            ActiveBlockingAlarm: activeBlockingAlarm is null ? null : ToAlarmResult(activeBlockingAlarm),
+            ActiveBlockingAlarm: activeBlockingAlarm is null
+                ? null
+                : ToAlarmResult(activeBlockingAlarm),
             CanResume: CanResume(operation, runtimeState, activeAlarms),
             CanPause: operation.Status == MachineOperationStatus.Running,
             CanFault: operation.Status == MachineOperationStatus.Running,
@@ -886,8 +926,13 @@ public sealed class MachineOperationApplicationService
                         or MachineOperationStatus.Faulted
             )
             {
+                int expectedVersion = state.Version;
                 SynchronizeRuntimeStateWithOperation(state, operation);
-                await _machineRuntimeStateRepository.UpdateAsync(state, cancellationToken);
+                await _machineRuntimeStateRepository.UpdateAsync(
+                    state,
+                    expectedVersion,
+                    cancellationToken
+                );
             }
 
             return state;
@@ -934,11 +979,12 @@ public sealed class MachineOperationApplicationService
             );
         }
 
-        IReadOnlyCollection<MachineAlarm> alarms = await _machineAlarmRepository.GetByMachineIdAsync(
-            runtimeState.MachineId,
-            activeOnly: true,
-            cancellationToken
-        );
+        IReadOnlyCollection<MachineAlarm> alarms =
+            await _machineAlarmRepository.GetByMachineIdAsync(
+                runtimeState.MachineId,
+                activeOnly: true,
+                cancellationToken
+            );
 
         if (alarms.Any(MachineAlarmBlockingPolicy.IsBlocking))
         {
@@ -976,11 +1022,12 @@ public sealed class MachineOperationApplicationService
             );
         }
 
-        IReadOnlyCollection<MachineAlarm> alarms = await _machineAlarmRepository.GetByMachineIdAsync(
-            runtimeState.MachineId,
-            activeOnly: true,
-            cancellationToken
-        );
+        IReadOnlyCollection<MachineAlarm> alarms =
+            await _machineAlarmRepository.GetByMachineIdAsync(
+                runtimeState.MachineId,
+                activeOnly: true,
+                cancellationToken
+            );
 
         if (alarms.Any(MachineAlarmBlockingPolicy.IsBlocking))
         {
@@ -992,10 +1039,15 @@ public sealed class MachineOperationApplicationService
 
     private async Task SaveRuntimeStateAsync(
         MachineRuntimeState runtimeState,
+        int expectedVersion,
         CancellationToken cancellationToken
     )
     {
-        await _machineRuntimeStateRepository.UpdateAsync(runtimeState, cancellationToken);
+        await _machineRuntimeStateRepository.UpdateAsync(
+            runtimeState,
+            expectedVersion,
+            cancellationToken
+        );
     }
 
     private async Task PublishOperationStatusNotificationAsync(
@@ -1102,7 +1154,12 @@ public sealed class MachineOperationApplicationService
         if (operation.Status == MachineOperationStatus.Faulted)
         {
             runtimeState.StartOperation(operation.Id, changedAt);
-            runtimeState.Fault(operation.Id, Guid.NewGuid(), operation.FailureReason ?? "Faulted", changedAt);
+            runtimeState.Fault(
+                operation.Id,
+                Guid.NewGuid(),
+                operation.FailureReason ?? "Faulted",
+                changedAt
+            );
         }
     }
 }

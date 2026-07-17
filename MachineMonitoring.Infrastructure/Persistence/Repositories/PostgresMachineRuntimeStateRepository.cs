@@ -48,14 +48,19 @@ public sealed class PostgresMachineRuntimeStateRepository : IMachineRuntimeState
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(MachineRuntimeState state, CancellationToken cancellationToken)
+    public async Task UpdateAsync(
+        MachineRuntimeState state,
+        int expectedVersion,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        MachineRuntimeStateRecord? record = await _dbContext.MachineRuntimeStates.SingleOrDefaultAsync(
-            item => item.MachineId == state.MachineId,
-            cancellationToken
-        );
+        MachineRuntimeStateRecord? record =
+            await _dbContext.MachineRuntimeStates.SingleOrDefaultAsync(
+                item => item.MachineId == state.MachineId,
+                cancellationToken
+            );
 
         if (record is null)
         {
@@ -70,6 +75,7 @@ public sealed class PostgresMachineRuntimeStateRepository : IMachineRuntimeState
         record.FailureReason = state.FailureReason;
         record.ActiveAlarmId = state.ActiveAlarmId;
         record.Version = state.Version;
+        _dbContext.Entry(record).Property(item => item.Version).OriginalValue = expectedVersion;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }

@@ -33,9 +33,8 @@ public sealed class EfCoreProductionTransactionManager : IProductionTransactionM
             return;
         }
 
-        await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
-            cancellationToken
-        );
+        await using IDbContextTransaction transaction =
+            await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
             await operation(cancellationToken);

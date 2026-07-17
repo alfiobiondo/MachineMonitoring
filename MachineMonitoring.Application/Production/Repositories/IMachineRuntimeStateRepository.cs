@@ -13,5 +13,9 @@ public interface IMachineRuntimeStateRepository
 
     Task AddAsync(MachineRuntimeState state, CancellationToken cancellationToken);
 
-    Task UpdateAsync(MachineRuntimeState state, CancellationToken cancellationToken);
+    Task UpdateAsync(
+        MachineRuntimeState state,
+        int expectedVersion,
+        CancellationToken cancellationToken
+    );
 }

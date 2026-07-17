@@ -50,7 +50,11 @@ public sealed class TestMachineRuntimeStateRepository : IMachineRuntimeStateRepo
         }
     }
 
-    public Task UpdateAsync(MachineRuntimeState state, CancellationToken cancellationToken)
+    public Task UpdateAsync(
+        MachineRuntimeState state,
+        int expectedVersion,
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
 

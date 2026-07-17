@@ -1113,7 +1113,11 @@ public sealed class ProductionSequenceServiceTests
             return Task.CompletedTask;
         }
 
-        public Task UpdateAsync(MachineRuntimeState state, CancellationToken cancellationToken)
+        public Task UpdateAsync(
+            MachineRuntimeState state,
+            int expectedVersion,
+            CancellationToken cancellationToken
+        )
         {
             _items[state.MachineId] = state;
             return Task.CompletedTask;
