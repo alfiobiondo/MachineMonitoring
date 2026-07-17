@@ -2,6 +2,7 @@ using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production;
 using MachineMonitoring.Infrastructure.HealthChecks;
 using MachineMonitoring.Infrastructure.Persistence;
+using MachineMonitoring.Infrastructure.Persistence.Outbox;
 using MachineMonitoring.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,15 @@ public static class DependencyInjection
         services.AddDbContext<MachineMonitoringDbContext>(options =>
             options.UseNpgsql(connectionString)
         );
+
+        services.AddScoped<ScopedProductionNotificationCollector>();
+        services.AddScoped<IProductionNotificationCollector>(serviceProvider =>
+            serviceProvider.GetRequiredService<ScopedProductionNotificationCollector>()
+        );
+        services.AddScoped<IProductionNotificationPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<ScopedProductionNotificationCollector>()
+        );
+        services.AddSingleton<ProductionNotificationOutboxSerializer>();
 
         services
             .AddHealthChecks()

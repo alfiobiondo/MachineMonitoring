@@ -821,10 +821,10 @@ public sealed class ProductionSequenceServiceTests
 
     private sealed class BufferedTestProductionTransactionManager : IProductionTransactionManager
     {
-        private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
+        private readonly BufferedRecordingNotificationPublisher _notificationPublisher;
 
         public BufferedTestProductionTransactionManager(
-            IBufferedProductionNotificationPublisher notificationPublisher
+            BufferedRecordingNotificationPublisher notificationPublisher
         )
         {
             _notificationPublisher = notificationPublisher;
@@ -846,18 +846,17 @@ public sealed class ProductionSequenceServiceTests
             try
             {
                 await operation(cancellationToken);
-                await _notificationPublisher.FlushAsync(cancellationToken);
+                _notificationPublisher.Published.AddRange(_notificationPublisher.GetPending());
             }
-            catch
+            finally
             {
-                _notificationPublisher.Reset();
-                throw;
+                _notificationPublisher.Clear();
             }
         }
     }
 
     private sealed class BufferedRecordingNotificationPublisher
-        : IBufferedProductionNotificationPublisher
+        : IProductionNotificationCollector
     {
         public List<ProductionNotification> Pending { get; } = [];
 
@@ -872,14 +871,12 @@ public sealed class ProductionSequenceServiceTests
             return Task.CompletedTask;
         }
 
-        public Task FlushAsync(CancellationToken cancellationToken)
+        public IReadOnlyCollection<ProductionNotification> GetPending()
         {
-            Published.AddRange(Pending);
-            Pending.Clear();
-            return Task.CompletedTask;
+            return Pending.ToArray();
         }
 
-        public void Reset()
+        public void Clear()
         {
             Pending.Clear();
         }

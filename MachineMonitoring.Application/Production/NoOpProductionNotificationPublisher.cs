@@ -2,7 +2,7 @@ using MachineMonitoring.Application.Production.Notifications;
 
 namespace MachineMonitoring.Application.Production;
 
-public sealed class NoOpProductionNotificationPublisher : IBufferedProductionNotificationPublisher
+public sealed class NoOpProductionNotificationPublisher : IProductionNotificationPublisher
 {
     public Task PublishAsync(
         ProductionNotification notification,
@@ -13,11 +13,4 @@ public sealed class NoOpProductionNotificationPublisher : IBufferedProductionNot
 
         return Task.CompletedTask;
     }
-
-    public Task FlushAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public void Reset() { }
 }

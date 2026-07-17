@@ -16,10 +16,7 @@ public static class DependencyInjection
         services.AddSingleton<IOperationProgressStrategy, RandomOperationProgressStrategy>();
         services.AddSingleton<IOperationFaultStrategy, RandomOperationFaultStrategy>();
         services.AddSingleton<IMachineFaultStrategy, RandomMachineFaultStrategy>();
-        services.AddSingleton<IBufferedProductionNotificationPublisher, NoOpProductionNotificationPublisher>();
-        services.AddSingleton<IProductionNotificationPublisher>(serviceProvider =>
-            serviceProvider.GetRequiredService<IBufferedProductionNotificationPublisher>()
-        );
+        services.AddSingleton(TimeProvider.System);
 
         services.AddScoped<ProductionSequenceService>();
         services.AddScoped<MachineOperationApplicationService>();

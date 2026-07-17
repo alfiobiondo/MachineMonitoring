@@ -693,6 +693,63 @@ tabelle che possono già contenere dati:
   così un secondo salvataggio stale genera davvero
   `DbUpdateConcurrencyException`.
 
+#### 2026-07-17 - Transactional Outbox Commit 1
+
+- Il Commit 1 dell'Outbox persiste atomicamente nella stessa transazione
+  PostgreSQL:
+  - le modifiche produttive;
+  - i messaggi Outbox derivati dalle production notifications.
+- `Application` continua a conoscere solo:
+  - `IProductionNotificationPublisher`;
+  - `IProductionNotificationCollector`.
+- Il collector approvato usa il contratto:
+  - `GetPending()` per uno snapshot non modificabile delle notification;
+  - `Clear()` per la pulizia finale.
+- In DI `IProductionNotificationPublisher` e
+  `IProductionNotificationCollector` devono risolvere la stessa identica
+  istanza scoped di `ScopedProductionNotificationCollector`.
+- Il transaction manager più esterno deve eseguire nell'ordine:
+  - `BeginTransactionAsync`;
+  - operation applicativa;
+  - `collector.GetPending()`;
+  - serializzazione Outbox;
+  - `DbContext.AddRange(...)`;
+  - `DbContext.SaveChangesAsync(...)`;
+  - `CommitAsync(...)`;
+  - `collector.Clear()` nel `finally`.
+- Se esiste già una `CurrentTransaction`, il transaction manager annidato:
+  - esegue solo l'operation;
+  - non legge il collector;
+  - non persiste l'Outbox;
+  - non chiama `SaveChangesAsync`;
+  - non chiama `CommitAsync`;
+  - non chiama `Clear()`.
+- I dettagli tecnici Outbox restano in `Infrastructure`, inclusi:
+  - `OutboxMessageRecord`;
+  - mapping EF Core;
+  - serializer esplicito;
+  - collector scoped concreto.
+- `CreatedAt` dei record Outbox usa `TimeProvider`, registrato in DI come
+  `TimeProvider.System` e sostituibile nei test.
+- I tipi Outbox devono essere stabili e versionati, per esempio:
+  - `machine-runtime-status-changed.v1`;
+  - `machine-alarm-raised.v1`;
+  - `operation-progress-changed.v1`.
+- Il payload Outbox deve essere una proiezione esplicita e stabile:
+  non si serializzano direttamente notification applicative, entità Domain o
+  record EF.
+- Nel Commit 1 sono supportate solo le 7 notification oggi realmente emesse:
+  - `OperationStatusChangedNotification`;
+  - `OperationProgressChangedNotification`;
+  - `OperationEventAppendedNotification`;
+  - `MachineAlarmRaisedNotification`;
+  - `MachineAlarmAcknowledgedNotification`;
+  - `MachineAlarmResolvedNotification`;
+  - `MachineRuntimeStatusChangedNotification`.
+- `MachineRuntimeStatusChangedNotification` non include ancora una versione del
+  runtime state: l'ordinamento o l'idempotenza futura non possono quindi
+  basarsi su un numero di versione in questo commit.
+
 #### 2026-07-17 - Eventi operazione, allarmi macchina e start parziali
 
 - Lo storico delle `MachineOperation` è persistente e append-only tramite la

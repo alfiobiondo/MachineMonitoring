@@ -4,15 +4,15 @@ namespace MachineMonitoring.Api.Tests.Fakes;
 
 public sealed class FakeProductionTransactionManager : IProductionTransactionManager
 {
-    private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
+    private readonly IProductionNotificationCollector _notificationCollector;
 
     public FakeProductionTransactionManager(
-        IBufferedProductionNotificationPublisher notificationPublisher
+        IProductionNotificationCollector notificationCollector
     )
     {
-        ArgumentNullException.ThrowIfNull(notificationPublisher);
+        ArgumentNullException.ThrowIfNull(notificationCollector);
 
-        _notificationPublisher = notificationPublisher;
+        _notificationCollector = notificationCollector;
     }
 
     public Task ExecuteAsync(
@@ -33,12 +33,10 @@ public sealed class FakeProductionTransactionManager : IProductionTransactionMan
         try
         {
             await operation(cancellationToken);
-            await _notificationPublisher.FlushAsync(cancellationToken);
         }
-        catch
+        finally
         {
-            _notificationPublisher.Reset();
-            throw;
+            _notificationCollector.Clear();
         }
     }
 }

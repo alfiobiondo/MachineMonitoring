@@ -24,6 +24,7 @@ public sealed class MachineMonitoringDbContext : DbContext
         Set<MachineOperationEventRecord>();
     public DbSet<MachineAlarmRecord> MachineAlarms => Set<MachineAlarmRecord>();
     public DbSet<MachineRuntimeStateRecord> MachineRuntimeStates => Set<MachineRuntimeStateRecord>();
+    public DbSet<OutboxMessageRecord> OutboxMessages => Set<OutboxMessageRecord>();
     public DbSet<LaserCutConfigurationRecord> LaserCutConfigurations =>
         Set<LaserCutConfigurationRecord>();
 
@@ -44,6 +45,7 @@ public sealed class MachineMonitoringDbContext : DbContext
         ConfigureMachineOperationEvent(modelBuilder);
         ConfigureMachineAlarm(modelBuilder);
         ConfigureMachineRuntimeState(modelBuilder);
+        ConfigureOutboxMessage(modelBuilder);
         ConfigureLaserCutConfiguration(modelBuilder);
     }
 
@@ -544,6 +546,35 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .WithMany(alarm => alarm.RuntimeStates)
                 .HasForeignKey(item => item.ActiveAlarmId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureOutboxMessage(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OutboxMessageRecord>(entity =>
+        {
+            entity.ToTable("outbox_messages");
+
+            entity.HasKey(item => item.Id);
+
+            entity.Property(item => item.Id).HasColumnName("id");
+
+            entity
+                .Property(item => item.Type)
+                .HasColumnName("type")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity
+                .Property(item => item.Payload)
+                .HasColumnName("payload")
+                .HasColumnType("jsonb")
+                .IsRequired();
+
+            entity.Property(item => item.OccurredAt).HasColumnName("occurred_at").IsRequired();
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at").IsRequired();
+
+            entity.HasIndex(item => item.CreatedAt);
         });
     }
 

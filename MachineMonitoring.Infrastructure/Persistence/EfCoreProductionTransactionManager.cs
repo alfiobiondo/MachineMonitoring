@@ -1,23 +1,32 @@
 using MachineMonitoring.Application.Production;
 using Microsoft.EntityFrameworkCore.Storage;
+using MachineMonitoring.Infrastructure.Persistence.Outbox;
 
 namespace MachineMonitoring.Infrastructure.Persistence;
 
 public sealed class EfCoreProductionTransactionManager : IProductionTransactionManager
 {
     private readonly MachineMonitoringDbContext _dbContext;
-    private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
+    private readonly IProductionNotificationCollector _notificationCollector;
+    private readonly ProductionNotificationOutboxSerializer _outboxSerializer;
+    private readonly TimeProvider _timeProvider;
 
     public EfCoreProductionTransactionManager(
         MachineMonitoringDbContext dbContext,
-        IBufferedProductionNotificationPublisher notificationPublisher
+        IProductionNotificationCollector notificationCollector,
+        ProductionNotificationOutboxSerializer outboxSerializer,
+        TimeProvider timeProvider
     )
     {
         ArgumentNullException.ThrowIfNull(dbContext);
-        ArgumentNullException.ThrowIfNull(notificationPublisher);
+        ArgumentNullException.ThrowIfNull(notificationCollector);
+        ArgumentNullException.ThrowIfNull(outboxSerializer);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         _dbContext = dbContext;
-        _notificationPublisher = notificationPublisher;
+        _notificationCollector = notificationCollector;
+        _outboxSerializer = outboxSerializer;
+        _timeProvider = timeProvider;
     }
 
     public async Task ExecuteAsync(
@@ -38,13 +47,20 @@ public sealed class EfCoreProductionTransactionManager : IProductionTransactionM
         try
         {
             await operation(cancellationToken);
+            IReadOnlyCollection<Application.Production.Notifications.ProductionNotification> pendingNotifications =
+                _notificationCollector.GetPending();
+            IReadOnlyCollection<Models.OutboxMessageRecord> outboxRecords = _outboxSerializer.Serialize(
+                pendingNotifications,
+                _timeProvider.GetUtcNow()
+            );
+
+            _dbContext.OutboxMessages.AddRange(outboxRecords);
+            await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            await _notificationPublisher.FlushAsync(cancellationToken);
         }
-        catch
+        finally
         {
-            _notificationPublisher.Reset();
-            throw;
+            _notificationCollector.Clear();
         }
     }
 }
