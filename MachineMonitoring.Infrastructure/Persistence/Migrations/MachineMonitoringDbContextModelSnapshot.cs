@@ -565,6 +565,54 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.ToTable("machine_operations", (string)null);
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineRuntimeStateRecord", b =>
+                {
+                    b.Property<string>("MachineId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("machine_id");
+
+                    b.Property<Guid?>("ActiveAlarmId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("active_alarm_id");
+
+                    b.Property<Guid?>("CurrentOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("current_operation_id");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("failure_reason");
+
+                    b.Property<DateTimeOffset>("LastChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_changed_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("MachineId");
+
+                    b.HasIndex("ActiveAlarmId")
+                        .IsUnique();
+
+                    b.HasIndex("CurrentOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("machine_runtime_states", (string)null);
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -779,6 +827,23 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("Workpiece");
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineRuntimeStateRecord", b =>
+                {
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", "ActiveAlarm")
+                        .WithMany("RuntimeStates")
+                        .HasForeignKey("ActiveAlarmId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", "CurrentOperation")
+                        .WithMany("RuntimeStates")
+                        .HasForeignKey("CurrentOperationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ActiveAlarm");
+
+                    b.Navigation("CurrentOperation");
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", b =>
                 {
                     b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", "ProductionLot")
@@ -793,6 +858,8 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", b =>
                 {
                     b.Navigation("OperationEvents");
+
+                    b.Navigation("RuntimeStates");
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", b =>
@@ -811,6 +878,8 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("LaserCutConfiguration");
 
                     b.Navigation("MachineAlarms");
+
+                    b.Navigation("RuntimeStates");
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", b =>

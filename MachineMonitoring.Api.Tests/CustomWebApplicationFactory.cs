@@ -1,4 +1,5 @@
 using MachineMonitoring.Api.Tests.Fakes;
+using MachineMonitoring.Application;
 using MachineMonitoring.Application.Production;
 using MachineMonitoring.Application.Production.Repositories;
 using Microsoft.AspNetCore.Hosting;
@@ -16,6 +17,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     public TestProductionLotRepository ProductionLotRepository { get; } = new();
     public TestMachineOperationEventRepository MachineOperationEventRepository { get; }
     public TestMachineAlarmRepository MachineAlarmRepository { get; } = new();
+    public TestMachineRuntimeStateRepository MachineRuntimeStateRepository { get; } = new();
+    public TestMachineProvider MachineProvider { get; } = new();
     public TestProductionCatalog ProductionCatalog { get; } = new();
 
     public CustomWebApplicationFactory()
@@ -35,17 +38,21 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IProductionLotRepository>();
             services.RemoveAll<IMachineOperationEventRepository>();
             services.RemoveAll<IMachineAlarmRepository>();
+            services.RemoveAll<IMachineRuntimeStateRepository>();
             services.RemoveAll<IMaterialRepository>();
             services.RemoveAll<INozzleRepository>();
             services.RemoveAll<IDrawingFileRepository>();
             services.RemoveAll<IMachineCapabilitiesRepository>();
             services.RemoveAll<IProductionTransactionManager>();
+            services.RemoveAll<IMachineProvider>();
 
             services.AddSingleton(MachineOperationRepository);
             services.AddSingleton(WorkpieceRepository);
             services.AddSingleton(ProductionLotRepository);
             services.AddSingleton(MachineOperationEventRepository);
             services.AddSingleton(MachineAlarmRepository);
+            services.AddSingleton(MachineRuntimeStateRepository);
+            services.AddSingleton(MachineProvider);
             services.AddSingleton(ProductionCatalog);
             services.AddSingleton<FakeProductionTransactionManager>();
 
@@ -67,6 +74,14 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IMachineAlarmRepository>(serviceProvider =>
                 serviceProvider.GetRequiredService<TestMachineAlarmRepository>()
+            );
+
+            services.AddSingleton<IMachineRuntimeStateRepository>(serviceProvider =>
+                serviceProvider.GetRequiredService<TestMachineRuntimeStateRepository>()
+            );
+
+            services.AddSingleton<IMachineProvider>(serviceProvider =>
+                serviceProvider.GetRequiredService<TestMachineProvider>()
             );
 
             services.AddSingleton<IMaterialRepository>(serviceProvider =>

@@ -6,12 +6,18 @@ namespace MachineMonitoring.Infrastructure.Persistence;
 public sealed class EfCoreProductionTransactionManager : IProductionTransactionManager
 {
     private readonly MachineMonitoringDbContext _dbContext;
+    private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
 
-    public EfCoreProductionTransactionManager(MachineMonitoringDbContext dbContext)
+    public EfCoreProductionTransactionManager(
+        MachineMonitoringDbContext dbContext,
+        IBufferedProductionNotificationPublisher notificationPublisher
+    )
     {
         ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(notificationPublisher);
 
         _dbContext = dbContext;
+        _notificationPublisher = notificationPublisher;
     }
 
     public async Task ExecuteAsync(
@@ -27,12 +33,18 @@ public sealed class EfCoreProductionTransactionManager : IProductionTransactionM
             return;
         }
 
-        await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
-            cancellationToken
-        );
-
-        await operation(cancellationToken);
-
-        await transaction.CommitAsync(cancellationToken);
+        await using IDbContextTransaction transaction =
+            await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            await _notificationPublisher.FlushAsync(cancellationToken);
+        }
+        catch
+        {
+            _notificationPublisher.Reset();
+            throw;
+        }
     }
 }

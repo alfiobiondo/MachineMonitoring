@@ -3,6 +3,7 @@ using MachineMonitoring.Api.Catalogs;
 using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
 using MachineMonitoring.Api.HealthChecks;
+using MachineMonitoring.Api.Machines;
 using MachineMonitoring.Api.Operations;
 using MachineMonitoring.Api.Production;
 using MachineMonitoring.Application;
@@ -14,6 +15,7 @@ using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
+using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
@@ -22,6 +24,14 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder
     .Services.AddMachineMonitoringApplication()
     .AddMachineMonitoringInfrastructure(builder.Configuration);
+
+builder
+    .Services.AddOptions<MachineDataOptions>()
+    .Bind(builder.Configuration.GetSection(MachineDataOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddTransient<IMachineProvider, JsonMachineProvider>();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -597,6 +607,166 @@ app.MapGet(
     .WithTags("Alarms");
 
 app.MapGet(
+        "/api/machines",
+        async (MachineRuntimeApplicationService service, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyCollection<MachineDetailsResult> result = await service.GetAllAsync(
+                cancellationToken
+            );
+
+            return Results.Ok(result.Select(CreateMachineDetailsResponse).ToArray());
+        }
+    )
+    .WithName("GetMachines")
+    .WithTags("Machines");
+
+app.MapGet(
+        "/api/machines/{machineId}",
+        async (
+            string machineId,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            MachineDetailsResult result = await service.GetByIdAsync(machineId, cancellationToken);
+            return Results.Ok(CreateMachineDetailsResponse(result));
+        }
+    )
+    .WithName("GetMachineById")
+    .WithTags("Machines");
+
+app.MapGet(
+        "/api/machines/{machineId}/state",
+        async (
+            string machineId,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            MachineRuntimeStateResult result = await service.GetStateAsync(
+                machineId,
+                cancellationToken
+            );
+
+            return Results.Ok(CreateMachineRuntimeStateResponse(result));
+        }
+    )
+    .WithName("GetMachineRuntimeState")
+    .WithTags("Machines");
+
+app.MapPost(
+        "/api/machines/{machineId}/fault",
+        async (
+            string machineId,
+            FaultMachineRequest request,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            if (
+                !Enum.TryParse(
+                    request.Severity,
+                    ignoreCase: true,
+                    out MachineAlarmSeverity severity
+                )
+            )
+            {
+                throw new ArgumentException($"Invalid alarm severity '{request.Severity}'.");
+            }
+
+            await service.FaultAsync(
+                new FaultMachineCommand(
+                    MachineId: machineId,
+                    Code: request.Code,
+                    Severity: severity,
+                    Message: request.Message,
+                    OperationId: request.OperationId
+                ),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("FaultMachine")
+    .WithTags("Machines");
+
+app.MapPost(
+        "/api/machines/{machineId}/maintenance/start",
+        async (
+            string machineId,
+            MachineReasonRequest? request,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.StartMaintenanceAsync(
+                new StartMachineMaintenanceCommand(machineId, request?.Reason),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("StartMachineMaintenance")
+    .WithTags("Machines");
+
+app.MapPost(
+        "/api/machines/{machineId}/maintenance/complete",
+        async (
+            string machineId,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.CompleteMaintenanceAsync(
+                new CompleteMachineMaintenanceCommand(machineId),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("CompleteMachineMaintenance")
+    .WithTags("Machines");
+
+app.MapPost(
+        "/api/machines/{machineId}/offline",
+        async (
+            string machineId,
+            MachineReasonRequest? request,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.SetOfflineAsync(
+                new SetMachineOfflineCommand(machineId, request?.Reason),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("SetMachineOffline")
+    .WithTags("Machines");
+
+app.MapPost(
+        "/api/machines/{machineId}/online",
+        async (
+            string machineId,
+            MachineRuntimeApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.SetOnlineAsync(new SetMachineOnlineCommand(machineId), cancellationToken);
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("SetMachineOnline")
+    .WithTags("Machines");
+
+app.MapGet(
         "/api/materials",
         async (
             bool? enabledOnly,
@@ -800,6 +970,13 @@ static MachineOperationDetailsResponse CreateOperationDetailsResponse(
         ProgressPercentage: result.ProgressPercentage,
         CurrentPhase: result.CurrentPhase,
         FailureReason: result.FailureReason,
+        MachineRuntimeStatus: result.MachineRuntimeStatus.ToString(),
+        ActiveBlockingAlarm: result.ActiveBlockingAlarm is null
+            ? null
+            : CreateMachineAlarmResponse(result.ActiveBlockingAlarm),
+        CanResume: result.CanResume,
+        CanPause: result.CanPause,
+        CanFault: result.CanFault,
         CreatedAt: result.CreatedAt,
         StartedAt: result.StartedAt,
         CompletedAt: result.CompletedAt,
@@ -941,6 +1118,33 @@ static MachineAlarmResponse CreateMachineAlarmResponse(MachineAlarmResult result
         AcknowledgedAt: result.AcknowledgedAt,
         ResolvedAt: result.ResolvedAt,
         ResolutionNotes: result.ResolutionNotes
+    );
+}
+
+static MachineRuntimeStateResponse CreateMachineRuntimeStateResponse(
+    MachineRuntimeStateResult result
+)
+{
+    return new MachineRuntimeStateResponse(
+        MachineId: result.MachineId,
+        Status: result.Status.ToString(),
+        CurrentOperationId: result.CurrentOperationId,
+        LastChangedAt: result.LastChangedAt,
+        FailureReason: result.FailureReason,
+        ActiveAlarmId: result.ActiveAlarmId,
+        ActiveAlarmsCount: result.ActiveAlarmsCount
+    );
+}
+
+static MachineDetailsResponse CreateMachineDetailsResponse(MachineDetailsResult result)
+{
+    return new MachineDetailsResponse(
+        Id: result.Id,
+        Name: result.Name,
+        Location: result.Location,
+        SerialNumber: result.SerialNumber,
+        CatalogStatus: result.CatalogStatus.ToString(),
+        Runtime: CreateMachineRuntimeStateResponse(result.Runtime)
     );
 }
 

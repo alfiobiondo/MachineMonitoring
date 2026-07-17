@@ -21,6 +21,7 @@ public sealed class OperationHistoryEndpointTests
         _factory.ProductionLotRepository.Clear();
         _factory.MachineOperationEventRepository.Clear();
         _factory.MachineAlarmRepository.Clear();
+        _factory.MachineRuntimeStateRepository.Clear();
     }
 
     [Fact]

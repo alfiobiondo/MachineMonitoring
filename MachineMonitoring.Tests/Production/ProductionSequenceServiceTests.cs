@@ -1,5 +1,6 @@
 using MachineMonitoring.Application.Production;
 using MachineMonitoring.Application.Production.Commands;
+using MachineMonitoring.Application.Production.Notifications;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Domain.Exceptions;
 using MachineMonitoring.Domain.Production;
@@ -15,6 +16,9 @@ public sealed class ProductionSequenceServiceTests
     private readonly InMemoryProductionLotRepository _productionLotRepository = new();
     private readonly InMemoryMachineOperationEventRepository _eventRepository;
     private readonly InMemoryMachineAlarmRepository _alarmRepository = new();
+    private readonly InMemoryMachineRuntimeStateRepository _runtimeStateRepository = new();
+    private readonly BufferedRecordingNotificationPublisher _notificationPublisher = new();
+    private readonly BufferedTestProductionTransactionManager _transactionManager;
     private readonly ProductionSequenceService _sequenceService;
     private readonly MachineOperationApplicationService _operationService;
     private readonly MachineAlarmApplicationService _alarmService;
@@ -22,6 +26,7 @@ public sealed class ProductionSequenceServiceTests
     public ProductionSequenceServiceTests()
     {
         InMemoryProductionCatalog catalog = new();
+        _transactionManager = new BufferedTestProductionTransactionManager(_notificationPublisher);
         _eventRepository = new InMemoryMachineOperationEventRepository(
             _operationRepository,
             _workpieceRepository
@@ -32,7 +37,7 @@ public sealed class ProductionSequenceServiceTests
             _workpieceRepository,
             _operationRepository,
             _eventRepository,
-            new NoOpProductionTransactionManager(),
+            _transactionManager,
             NullLogger<ProductionSequenceService>.Instance
         );
 
@@ -45,9 +50,11 @@ public sealed class ProductionSequenceServiceTests
             machineOperationRepository: _operationRepository,
             machineOperationEventRepository: _eventRepository,
             machineAlarmRepository: _alarmRepository,
-            transactionManager: new NoOpProductionTransactionManager(),
+            machineRuntimeStateRepository: _runtimeStateRepository,
+            transactionManager: _transactionManager,
             productionSequenceService: _sequenceService,
             configurationValidator: new Domain.Technology.LaserCutConfigurationValidator(),
+            notificationPublisher: _notificationPublisher,
             logger: NullLogger<MachineOperationApplicationService>.Instance
         );
 
@@ -55,8 +62,200 @@ public sealed class ProductionSequenceServiceTests
             machineAlarmRepository: _alarmRepository,
             machineOperationRepository: _operationRepository,
             machineOperationEventRepository: _eventRepository,
-            transactionManager: new NoOpProductionTransactionManager()
+            machineRuntimeStateRepository: _runtimeStateRepository,
+            transactionManager: _transactionManager,
+            notificationPublisher: _notificationPublisher
         );
+    }
+
+    [Fact]
+    public async Task StartAsync_PublishesStatusRuntimeAndEventNotifications()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+
+        OperationStatusChangedNotification statusNotification = AssertSinglePublished<
+            OperationStatusChangedNotification
+        >();
+        MachineRuntimeStatusChangedNotification runtimeNotification = AssertSinglePublished<
+            MachineRuntimeStatusChangedNotification
+        >();
+        OperationEventAppendedNotification eventNotification = AssertSinglePublished<
+            OperationEventAppendedNotification
+        >();
+
+        Assert.Equal(operation.Id, statusNotification.OperationId);
+        Assert.Equal(MachineOperationStatus.Running, statusNotification.Status);
+
+        Assert.Equal(operation.MachineId, runtimeNotification.MachineId);
+        Assert.Equal(MachineRuntimeStatus.Running, runtimeNotification.Status);
+        Assert.Equal(operation.Id, runtimeNotification.CurrentOperationId);
+
+        Assert.Equal(operation.Id, eventNotification.OperationId);
+        Assert.Equal(MachineOperationEventType.Started, eventNotification.EventType);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    [Fact]
+    public async Task UpdateProgressAsync_PublishesProgressNotification()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+
+        _notificationPublisher.ClearPublished();
+
+        await _operationService.UpdateProgressAsync(
+            new UpdateMachineOperationProgressCommand(operation.Id, 35, "Laser cutting"),
+            CancellationToken.None
+        );
+
+        OperationProgressChangedNotification notification = AssertSinglePublished<
+            OperationProgressChangedNotification
+        >();
+
+        Assert.Equal(operation.Id, notification.OperationId);
+        Assert.Equal(35, notification.ProgressPercentage);
+        Assert.Equal("Laser cutting", notification.CurrentPhase);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    [Fact]
+    public async Task FaultAsync_PublishesAlarmStatusRuntimeAndEventNotifications()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+
+        _notificationPublisher.ClearPublished();
+
+        await _operationService.FaultAsync(
+            new FaultMachineOperationCommand(
+                operation.Id,
+                "ALARM-001",
+                "Gas pressure drop",
+                "Gas pressure is below threshold.",
+                MachineAlarmSeverity.Warning
+            ),
+            CancellationToken.None
+        );
+
+        MachineAlarmRaisedNotification alarmNotification = AssertSinglePublished<
+            MachineAlarmRaisedNotification
+        >();
+        OperationStatusChangedNotification statusNotification = AssertSinglePublished<
+            OperationStatusChangedNotification
+        >();
+        MachineRuntimeStatusChangedNotification runtimeNotification = AssertSinglePublished<
+            MachineRuntimeStatusChangedNotification
+        >();
+        OperationEventAppendedNotification eventNotification = AssertSinglePublished<
+            OperationEventAppendedNotification
+        >();
+
+        Assert.Equal(operation.MachineId, alarmNotification.MachineId);
+        Assert.Equal(operation.Id, alarmNotification.OperationId);
+
+        Assert.Equal(operation.Id, statusNotification.OperationId);
+        Assert.Equal(MachineOperationStatus.Faulted, statusNotification.Status);
+
+        Assert.Equal(operation.MachineId, runtimeNotification.MachineId);
+        Assert.Equal(MachineRuntimeStatus.Faulted, runtimeNotification.Status);
+        Assert.Equal(operation.Id, runtimeNotification.CurrentOperationId);
+
+        Assert.Equal(operation.Id, eventNotification.OperationId);
+        Assert.Equal(MachineOperationEventType.Faulted, eventNotification.EventType);
+    }
+
+    [Fact]
+    public async Task AcknowledgeAndResolveAlarm_PublishExpectedNotifications()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+        await _operationService.FaultAsync(
+            new FaultMachineOperationCommand(
+                operation.Id,
+                "ALARM-001",
+                "Gas pressure drop",
+                "Gas pressure is below threshold.",
+                MachineAlarmSeverity.Warning
+            ),
+            CancellationToken.None
+        );
+
+        MachineAlarm alarm = Assert.Single(
+            await _alarmRepository.GetByOperationIdAsync(operation.Id, CancellationToken.None)
+        );
+
+        _notificationPublisher.ClearPublished();
+
+        await _alarmService.AcknowledgeAsync(
+            new AcknowledgeMachineAlarmCommand(alarm.Id),
+            CancellationToken.None
+        );
+
+        MachineAlarmAcknowledgedNotification acknowledgedNotification = AssertSinglePublished<
+            MachineAlarmAcknowledgedNotification
+        >();
+        Assert.Equal(alarm.Id, acknowledgedNotification.AlarmId);
+        Assert.Equal(alarm.MachineId, acknowledgedNotification.MachineId);
+        Assert.Empty(_notificationPublisher.Pending);
+
+        _notificationPublisher.ClearPublished();
+
+        await _alarmService.ResolveAsync(
+            new ResolveMachineAlarmCommand(alarm.Id, "Pressure stabilized"),
+            CancellationToken.None
+        );
+
+        MachineAlarmResolvedNotification resolvedNotification = AssertSinglePublished<
+            MachineAlarmResolvedNotification
+        >();
+        MachineRuntimeStatusChangedNotification runtimeNotification = AssertSinglePublished<
+            MachineRuntimeStatusChangedNotification
+        >();
+        OperationEventAppendedNotification eventNotification = AssertSinglePublished<
+            OperationEventAppendedNotification
+        >();
+
+        Assert.Equal(alarm.Id, resolvedNotification.AlarmId);
+        Assert.Equal(alarm.MachineId, resolvedNotification.MachineId);
+
+        Assert.Equal(operation.MachineId, runtimeNotification.MachineId);
+        Assert.Equal(MachineRuntimeStatus.Paused, runtimeNotification.Status);
+        Assert.Equal(operation.Id, runtimeNotification.CurrentOperationId);
+
+        Assert.Equal(operation.Id, eventNotification.OperationId);
+        Assert.Equal(MachineOperationEventType.Recovered, eventNotification.EventType);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    private TNotification AssertSinglePublished<TNotification>()
+        where TNotification : ProductionNotification
+    {
+        return Assert.Single(_notificationPublisher.Published.OfType<TNotification>());
     }
 
     [Fact]
@@ -620,14 +819,75 @@ public sealed class ProductionSequenceServiceTests
         );
     }
 
-    private sealed class NoOpProductionTransactionManager : IProductionTransactionManager
+    private sealed class BufferedTestProductionTransactionManager : IProductionTransactionManager
     {
+        private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
+
+        public BufferedTestProductionTransactionManager(
+            IBufferedProductionNotificationPublisher notificationPublisher
+        )
+        {
+            _notificationPublisher = notificationPublisher;
+        }
+
         public Task ExecuteAsync(
             Func<CancellationToken, Task> operation,
             CancellationToken cancellationToken
         )
         {
-            return operation(cancellationToken);
+            return ExecuteInternalAsync(operation, cancellationToken);
+        }
+
+        private async Task ExecuteInternalAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                await operation(cancellationToken);
+                await _notificationPublisher.FlushAsync(cancellationToken);
+            }
+            catch
+            {
+                _notificationPublisher.Reset();
+                throw;
+            }
+        }
+    }
+
+    private sealed class BufferedRecordingNotificationPublisher
+        : IBufferedProductionNotificationPublisher
+    {
+        public List<ProductionNotification> Pending { get; } = [];
+
+        public List<ProductionNotification> Published { get; } = [];
+
+        public Task PublishAsync(
+            ProductionNotification notification,
+            CancellationToken cancellationToken
+        )
+        {
+            Pending.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task FlushAsync(CancellationToken cancellationToken)
+        {
+            Published.AddRange(Pending);
+            Pending.Clear();
+            return Task.CompletedTask;
+        }
+
+        public void Reset()
+        {
+            Pending.Clear();
+        }
+
+        public void ClearPublished()
+        {
+            Pending.Clear();
+            Published.Clear();
         }
     }
 
@@ -820,6 +1080,46 @@ public sealed class ProductionSequenceServiceTests
         public Task UpdateAsync(MachineAlarm alarm, CancellationToken cancellationToken)
         {
             _alarms[alarm.Id] = alarm;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryMachineRuntimeStateRepository
+        : IMachineRuntimeStateRepository
+    {
+        private readonly Dictionary<string, MachineRuntimeState> _items = [];
+
+        public Task<MachineRuntimeState?> GetByMachineIdAsync(
+            string machineId,
+            CancellationToken cancellationToken
+        )
+        {
+            _items.TryGetValue(machineId, out MachineRuntimeState? state);
+            return Task.FromResult(state);
+        }
+
+        public Task<IReadOnlyCollection<MachineRuntimeState>> GetAllAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            return Task.FromResult<IReadOnlyCollection<MachineRuntimeState>>(
+                _items.Values.OrderBy(item => item.MachineId).ToArray()
+            );
+        }
+
+        public Task AddAsync(MachineRuntimeState state, CancellationToken cancellationToken)
+        {
+            _items[state.MachineId] = state;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(
+            MachineRuntimeState state,
+            int expectedVersion,
+            CancellationToken cancellationToken
+        )
+        {
+            _items[state.MachineId] = state;
             return Task.CompletedTask;
         }
     }

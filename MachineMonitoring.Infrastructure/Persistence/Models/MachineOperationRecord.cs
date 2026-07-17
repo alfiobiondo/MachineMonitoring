@@ -35,4 +35,6 @@ public sealed class MachineOperationRecord
     public List<MachineOperationEventRecord> Events { get; set; } = [];
 
     public List<MachineAlarmRecord> MachineAlarms { get; set; } = [];
+
+    public List<MachineRuntimeStateRecord> RuntimeStates { get; set; } = [];
 }

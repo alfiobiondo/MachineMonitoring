@@ -23,6 +23,7 @@ public sealed class MachineMonitoringDbContext : DbContext
     public DbSet<MachineOperationEventRecord> MachineOperationEvents =>
         Set<MachineOperationEventRecord>();
     public DbSet<MachineAlarmRecord> MachineAlarms => Set<MachineAlarmRecord>();
+    public DbSet<MachineRuntimeStateRecord> MachineRuntimeStates => Set<MachineRuntimeStateRecord>();
     public DbSet<LaserCutConfigurationRecord> LaserCutConfigurations =>
         Set<LaserCutConfigurationRecord>();
 
@@ -42,6 +43,7 @@ public sealed class MachineMonitoringDbContext : DbContext
         ConfigureMachineOperation(modelBuilder);
         ConfigureMachineOperationEvent(modelBuilder);
         ConfigureMachineAlarm(modelBuilder);
+        ConfigureMachineRuntimeState(modelBuilder);
         ConfigureLaserCutConfiguration(modelBuilder);
     }
 
@@ -500,6 +502,47 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .HasOne(item => item.MachineOperation)
                 .WithMany(operation => operation.MachineAlarms)
                 .HasForeignKey(item => item.MachineOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureMachineRuntimeState(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MachineRuntimeStateRecord>(entity =>
+        {
+            entity.ToTable("machine_runtime_states");
+
+            entity.HasKey(item => item.MachineId);
+
+            entity.Property(item => item.MachineId).HasColumnName("machine_id").HasMaxLength(50);
+
+            entity
+                .Property(item => item.Status)
+                .HasColumnName("status")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(item => item.CurrentOperationId).HasColumnName("current_operation_id");
+            entity.Property(item => item.LastChangedAt).HasColumnName("last_changed_at").IsRequired();
+            entity.Property(item => item.FailureReason).HasColumnName("failure_reason").HasMaxLength(500);
+            entity.Property(item => item.ActiveAlarmId).HasColumnName("active_alarm_id");
+            entity.Property(item => item.Version).HasColumnName("version").IsConcurrencyToken();
+
+            entity.HasIndex(item => item.Status);
+            entity.HasIndex(item => item.CurrentOperationId).IsUnique();
+            entity.HasIndex(item => item.ActiveAlarmId).IsUnique();
+
+            entity
+                .HasOne(item => item.CurrentOperation)
+                .WithMany(operation => operation.RuntimeStates)
+                .HasForeignKey(item => item.CurrentOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+                .HasOne(item => item.ActiveAlarm)
+                .WithMany(alarm => alarm.RuntimeStates)
+                .HasForeignKey(item => item.ActiveAlarmId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

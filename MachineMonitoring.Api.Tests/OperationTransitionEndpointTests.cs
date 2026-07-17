@@ -25,6 +25,7 @@ public sealed class OperationTransitionEndpointTests
         _factory.ProductionLotRepository.Clear();
         _factory.MachineOperationEventRepository.Clear();
         _factory.MachineAlarmRepository.Clear();
+        _factory.MachineRuntimeStateRepository.Clear();
     }
 
     [Fact]
@@ -144,6 +145,15 @@ public sealed class OperationTransitionEndpointTests
 
         Assert.NotNull(storedOperation);
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+
+        MachineRuntimeState? runtimeState = await _factory.MachineRuntimeStateRepository.GetByMachineIdAsync(
+            operation.MachineId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(runtimeState);
+        Assert.Equal(MachineRuntimeStatus.Running, runtimeState.Status);
+        Assert.Equal(operation.Id, runtimeState.CurrentOperationId);
         Assert.Equal("Preparing laser", storedOperation.CurrentPhase);
         Assert.NotNull(storedOperation.StartedAt);
 
@@ -259,6 +269,14 @@ public sealed class OperationTransitionEndpointTests
 
         Assert.NotNull(storedOperation);
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+
+        MachineRuntimeState? runtimeState = await _factory.MachineRuntimeStateRepository.GetByMachineIdAsync(
+            operation.MachineId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(runtimeState);
+        Assert.Equal(MachineRuntimeStatus.Running, runtimeState.Status);
         Assert.Equal(35, storedOperation.ProgressPercentage);
         Assert.Equal("Laser cutting", storedOperation.CurrentPhase);
     }
@@ -483,6 +501,15 @@ public sealed class OperationTransitionEndpointTests
         Assert.Single(alarms);
         Assert.Equal(MachineAlarmStatus.Active, alarms[0].Status);
         Assert.Contains(events, item => item.EventType == MachineOperationEventType.Faulted);
+
+        MachineRuntimeState? runtimeState = await _factory.MachineRuntimeStateRepository.GetByMachineIdAsync(
+            operation.MachineId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(runtimeState);
+        Assert.Equal(MachineRuntimeStatus.Faulted, runtimeState.Status);
+        Assert.Equal(operation.Id, runtimeState.CurrentOperationId);
     }
 
     [Fact]
@@ -532,6 +559,68 @@ public sealed class OperationTransitionEndpointTests
         Assert.Equal("Assist gas pressure drop", storedOperation.FailureReason);
         Assert.Equal(MachineAlarmStatus.Resolved, storedAlarm.Status);
         Assert.Equal("Pressure stabilized", storedAlarm.ResolutionNotes);
+
+        MachineRuntimeState? runtimeState = await _factory.MachineRuntimeStateRepository.GetByMachineIdAsync(
+            operation.MachineId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(runtimeState);
+        Assert.Equal(MachineRuntimeStatus.Paused, runtimeState.Status);
+        Assert.Equal(operation.Id, runtimeState.CurrentOperationId);
+    }
+
+    [Fact]
+    public async Task AcknowledgeAlarm_WhenOperationIsFaulted_DoesNotChangeOperationOrMachineState()
+    {
+        MachineOperation operation = CreateRunningOperation();
+
+        SeedHierarchy(operation.WorkpieceId);
+        _factory.MachineOperationRepository.Seed(operation);
+
+        await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/fault",
+            new FaultMachineOperationRequest(
+                FailureReason: "Assist gas pressure drop",
+                AlarmCode: "ALARM-001",
+                AlarmMessage: "Gas pressure is below threshold.",
+                Severity: "Warning"
+            )
+        );
+
+        MachineAlarm alarm = (
+            await _factory.MachineAlarmRepository.GetByOperationIdAsync(
+                operation.Id,
+                CancellationToken.None
+            )
+        ).Single();
+
+        HttpResponseMessage response = await _client.PostAsync(
+            $"/api/alarms/{alarm.Id}/acknowledge",
+            content: null
+        );
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+        MachineRuntimeState? runtimeState = await _factory.MachineRuntimeStateRepository.GetByMachineIdAsync(
+            operation.MachineId,
+            CancellationToken.None
+        );
+        MachineAlarm? storedAlarm = await _factory.MachineAlarmRepository.GetByIdAsync(
+            alarm.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.NotNull(runtimeState);
+        Assert.NotNull(storedAlarm);
+        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
+        Assert.Equal(MachineRuntimeStatus.Faulted, runtimeState.Status);
+        Assert.Equal(MachineAlarmStatus.Acknowledged, storedAlarm.Status);
     }
 
     private static MachineOperation CreateQueuedOperation()
