@@ -5,6 +5,7 @@ namespace MachineMonitoring.Api.Production;
 public sealed record WorkpieceDetailsResponse(
     Guid Id,
     Guid ProductionLotId,
+    int SequenceNumber,
     string Code,
     string MaterialCode,
     string Status,

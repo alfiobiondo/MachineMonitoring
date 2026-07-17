@@ -33,6 +33,7 @@ public sealed class WorkpieceApplicationService
         return _productionSequenceService.StartWorkpieceAsync(
             command.WorkpieceId,
             command.InitialPhase,
+            command.StartFromSequenceNumber,
             cancellationToken
         );
     }
@@ -62,6 +63,7 @@ public sealed class WorkpieceApplicationService
         return new WorkpieceDetailsResult(
             Id: workpiece.Id,
             ProductionLotId: workpiece.ProductionLotId,
+            SequenceNumber: workpiece.SequenceNumber,
             Code: workpiece.Code,
             MaterialCode: workpiece.MaterialCode,
             Status: workpiece.Status,

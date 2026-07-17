@@ -26,6 +26,16 @@ public sealed class TestWorkpieceRepository : IWorkpieceRepository
         }
     }
 
+    public bool TryGetValue(Guid workpieceId, out Workpiece? workpiece)
+    {
+        lock (_syncRoot)
+        {
+            bool found = _workpieces.TryGetValue(workpieceId, out Workpiece? storedWorkpiece);
+            workpiece = storedWorkpiece;
+            return found;
+        }
+    }
+
     public Task<Workpiece?> GetByIdAsync(Guid workpieceId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

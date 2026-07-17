@@ -8,6 +8,8 @@ public sealed class WorkpieceRecord
 
     public Guid ProductionLotId { get; set; }
 
+    public int SequenceNumber { get; set; }
+
     public string Code { get; set; } = string.Empty;
 
     public string MaterialCode { get; set; } = string.Empty;

@@ -12,8 +12,11 @@ public sealed class OperationSimulatorOptions
     [Range(1, 3600)]
     public int ProgressIntervalSeconds { get; init; } = 2;
 
-    [Range(1, 99)]
-    public int ProgressIncrement { get; init; } = 20;
+    [Range(1, 100)]
+    public int MinimumProgressIncrement { get; init; } = 10;
+
+    [Range(1, 100)]
+    public int MaximumProgressIncrement { get; init; } = 25;
 
     [Required]
     public string InitialPhase { get; init; } = "Preparing laser";

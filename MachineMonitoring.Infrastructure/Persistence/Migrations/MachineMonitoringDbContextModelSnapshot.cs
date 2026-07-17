@@ -260,6 +260,77 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.ToTable("laser_cut_configurations", (string)null);
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcknowledgedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("acknowledged_at");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("MachineId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("machine_id");
+
+                    b.Property<Guid?>("MachineOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_operation_id");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("message");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("raised_at");
+
+                    b.Property<string>("ResolutionNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("resolution_notes");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MachineId");
+
+                    b.HasIndex("MachineOperationId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("MachineId", "Status");
+
+                    b.ToTable("machine_alarms", (string)null);
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", b =>
                 {
                     b.Property<string>("MachineId")
@@ -357,6 +428,68 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.HasIndex("NozzleId");
 
                     b.ToTable("machine_capability_nozzles", (string)null);
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationEventRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("event_type");
+
+                    b.Property<Guid?>("MachineAlarmId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_alarm_id");
+
+                    b.Property<Guid>("MachineOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("machine_operation_id");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("text")
+                        .HasColumnName("metadata");
+
+                    b.Property<string>("NewStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("new_status");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Phase")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("phase");
+
+                    b.Property<string>("PreviousStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("previous_status");
+
+                    b.Property<int?>("ProgressPercentage")
+                        .HasColumnType("integer")
+                        .HasColumnName("progress_percentage");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MachineAlarmId");
+
+                    b.HasIndex("MachineOperationId", "OccurredAt");
+
+                    b.ToTable("machine_operation_events", (string)null);
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
@@ -512,6 +645,10 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("production_lot_id");
 
+                    b.Property<int>("SequenceNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence_number");
+
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
@@ -527,6 +664,11 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.HasIndex("ProductionLotId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("ProductionLotId", "SequenceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ProductionLotId", "Status", "SequenceNumber");
 
                     b.ToTable("workpieces", (string)null);
                 });
@@ -558,6 +700,16 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Operation");
+                });
+
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", b =>
+                {
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", "MachineOperation")
+                        .WithMany("MachineAlarms")
+                        .HasForeignKey("MachineOperationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("MachineOperation");
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilityGeometryTypeRecord", b =>
@@ -599,6 +751,23 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("MachineCapabilities");
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationEventRecord", b =>
+                {
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", "MachineAlarm")
+                        .WithMany("OperationEvents")
+                        .HasForeignKey("MachineAlarmId");
+
+                    b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", "MachineOperation")
+                        .WithMany("Events")
+                        .HasForeignKey("MachineOperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MachineAlarm");
+
+                    b.Navigation("MachineOperation");
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
                 {
                     b.HasOne("MachineMonitoring.Infrastructure.Persistence.Models.WorkpieceRecord", "Workpiece")
@@ -621,6 +790,11 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                     b.Navigation("ProductionLot");
                 });
 
+            modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineAlarmRecord", b =>
+                {
+                    b.Navigation("OperationEvents");
+                });
+
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineCapabilitiesRecord", b =>
                 {
                     b.Navigation("SupportedGeometryTypes");
@@ -632,7 +806,11 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.MachineOperationRecord", b =>
                 {
+                    b.Navigation("Events");
+
                     b.Navigation("LaserCutConfiguration");
+
+                    b.Navigation("MachineAlarms");
                 });
 
             modelBuilder.Entity("MachineMonitoring.Infrastructure.Persistence.Models.ProductionLotRecord", b =>

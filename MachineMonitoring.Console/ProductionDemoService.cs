@@ -51,6 +51,7 @@ public sealed class ProductionDemoService
         Workpiece workpiece = new(
             id: workpieceId,
             productionLotId: productionLot.Id,
+            sequenceNumber: 1,
             code: "WP-DEMO-001",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow

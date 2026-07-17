@@ -131,6 +131,33 @@ public sealed class MachineOperation
         Status = MachineOperationStatus.Running;
     }
 
+    public void Fault(string failureReason)
+    {
+        if (Status != MachineOperationStatus.Running)
+        {
+            throw new BusinessRuleViolationException(
+                $"Operation {Id} cannot fault from status {Status}."
+            );
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureReason);
+
+        Status = MachineOperationStatus.Faulted;
+        FailureReason = failureReason;
+    }
+
+    public void RecoverFromFault()
+    {
+        if (Status != MachineOperationStatus.Faulted)
+        {
+            throw new BusinessRuleViolationException(
+                $"Operation {Id} cannot be recovered from status {Status}."
+            );
+        }
+
+        Status = MachineOperationStatus.Paused;
+    }
+
     public void Complete(DateTimeOffset completedAt)
     {
         if (Status != MachineOperationStatus.Running)
@@ -148,7 +175,11 @@ public sealed class MachineOperation
 
     public void Fail(string failureReason)
     {
-        if (Status is not MachineOperationStatus.Running and not MachineOperationStatus.Paused)
+        if (
+            Status is not MachineOperationStatus.Running
+                and not MachineOperationStatus.Paused
+                and not MachineOperationStatus.Faulted
+        )
         {
             throw new BusinessRuleViolationException(
                 $"Operation {Id} cannot fail from status {Status}."
@@ -168,6 +199,7 @@ public sealed class MachineOperation
             is MachineOperationStatus.Completed
                 or MachineOperationStatus.Failed
                 or MachineOperationStatus.Cancelled
+                or MachineOperationStatus.Skipped
         )
         {
             throw new BusinessRuleViolationException(
@@ -176,6 +208,21 @@ public sealed class MachineOperation
         }
 
         Status = MachineOperationStatus.Cancelled;
+    }
+
+    public void Skip(DateTimeOffset skippedAt, string? reason)
+    {
+        if (Status != MachineOperationStatus.Queued)
+        {
+            throw new BusinessRuleViolationException(
+                $"Operation {Id} cannot be skipped from status {Status}."
+            );
+        }
+
+        Status = MachineOperationStatus.Skipped;
+        CurrentPhase = "Skipped";
+        FailureReason = reason;
+        CompletedAt = skippedAt;
     }
 
     public static MachineOperation Restore(

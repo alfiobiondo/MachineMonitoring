@@ -36,6 +36,16 @@ public sealed class TestMachineOperationRepository : IMachineOperationRepository
         }
     }
 
+    public bool TryGetValue(Guid operationId, out MachineOperation? operation)
+    {
+        lock (_syncRoot)
+        {
+            bool found = _operations.TryGetValue(operationId, out MachineOperation? storedOperation);
+            operation = storedOperation;
+            return found;
+        }
+    }
+
     public Task<MachineOperation?> GetByIdAsync(
         Guid operationId,
         CancellationToken cancellationToken
@@ -169,6 +179,7 @@ public sealed class TestMachineOperationRepository : IMachineOperationRepository
                 operation.WorkpieceId == workpieceId
                 && operation.SequenceNumber < sequenceNumber
                 && operation.Status != MachineOperationStatus.Completed
+                && operation.Status != MachineOperationStatus.Skipped
             );
 
             return Task.FromResult(exists);

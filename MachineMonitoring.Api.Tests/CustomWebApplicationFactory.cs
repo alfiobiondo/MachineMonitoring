@@ -14,7 +14,17 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     public TestMachineOperationRepository MachineOperationRepository { get; } = new();
     public TestWorkpieceRepository WorkpieceRepository { get; } = new();
     public TestProductionLotRepository ProductionLotRepository { get; } = new();
+    public TestMachineOperationEventRepository MachineOperationEventRepository { get; }
+    public TestMachineAlarmRepository MachineAlarmRepository { get; } = new();
     public TestProductionCatalog ProductionCatalog { get; } = new();
+
+    public CustomWebApplicationFactory()
+    {
+        MachineOperationEventRepository = new TestMachineOperationEventRepository(
+            MachineOperationRepository,
+            WorkpieceRepository
+        );
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -23,6 +33,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IMachineOperationRepository>();
             services.RemoveAll<IWorkpieceRepository>();
             services.RemoveAll<IProductionLotRepository>();
+            services.RemoveAll<IMachineOperationEventRepository>();
+            services.RemoveAll<IMachineAlarmRepository>();
             services.RemoveAll<IMaterialRepository>();
             services.RemoveAll<INozzleRepository>();
             services.RemoveAll<IDrawingFileRepository>();
@@ -32,6 +44,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton(MachineOperationRepository);
             services.AddSingleton(WorkpieceRepository);
             services.AddSingleton(ProductionLotRepository);
+            services.AddSingleton(MachineOperationEventRepository);
+            services.AddSingleton(MachineAlarmRepository);
             services.AddSingleton(ProductionCatalog);
             services.AddSingleton<FakeProductionTransactionManager>();
 
@@ -45,6 +59,14 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IProductionLotRepository>(serviceProvider =>
                 serviceProvider.GetRequiredService<TestProductionLotRepository>()
+            );
+
+            services.AddSingleton<IMachineOperationEventRepository>(serviceProvider =>
+                serviceProvider.GetRequiredService<TestMachineOperationEventRepository>()
+            );
+
+            services.AddSingleton<IMachineAlarmRepository>(serviceProvider =>
+                serviceProvider.GetRequiredService<TestMachineAlarmRepository>()
             );
 
             services.AddSingleton<IMaterialRepository>(serviceProvider =>

@@ -13,9 +13,12 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<LaserCutConfigurationValidator>();
+        services.AddSingleton<IOperationProgressStrategy, RandomOperationProgressStrategy>();
 
         services.AddScoped<ProductionSequenceService>();
         services.AddScoped<MachineOperationApplicationService>();
+        services.AddScoped<MachineOperationEventApplicationService>();
+        services.AddScoped<MachineAlarmApplicationService>();
         services.AddScoped<WorkpieceApplicationService>();
         services.AddScoped<ProductionLotApplicationService>();
 

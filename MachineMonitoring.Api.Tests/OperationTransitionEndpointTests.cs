@@ -23,6 +23,8 @@ public sealed class OperationTransitionEndpointTests
         _factory.MachineOperationRepository.Clear();
         _factory.WorkpieceRepository.Clear();
         _factory.ProductionLotRepository.Clear();
+        _factory.MachineOperationEventRepository.Clear();
+        _factory.MachineAlarmRepository.Clear();
     }
 
     [Fact]
@@ -436,6 +438,102 @@ public sealed class OperationTransitionEndpointTests
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
     }
 
+    [Fact]
+    public async Task FaultOperation_WhenOperationIsRunning_SetsFaultedAndCreatesActiveAlarm()
+    {
+        MachineOperation operation = CreateRunningOperation();
+
+        SeedHierarchy(operation.WorkpieceId);
+        _factory.MachineOperationRepository.Seed(operation);
+
+        FaultMachineOperationRequest request = new(
+            FailureReason: "Assist gas pressure drop",
+            AlarmCode: "ALARM-001",
+            AlarmMessage: "Gas pressure is below threshold.",
+            Severity: "Warning"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/fault",
+            request
+        );
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+        MachineAlarm[] alarms = (
+            await _factory.MachineAlarmRepository.GetByOperationIdAsync(
+                operation.Id,
+                CancellationToken.None
+            )
+        ).ToArray();
+        MachineOperationEvent[] events = (
+            await _factory.MachineOperationEventRepository.GetByOperationIdAsync(
+                operation.Id,
+                CancellationToken.None
+            )
+        ).ToArray();
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
+        Assert.Equal("Assist gas pressure drop", storedOperation.FailureReason);
+        Assert.Single(alarms);
+        Assert.Equal(MachineAlarmStatus.Active, alarms[0].Status);
+        Assert.Contains(events, item => item.EventType == MachineOperationEventType.Faulted);
+    }
+
+    [Fact]
+    public async Task ResolveAlarm_WhenOperationIsFaulted_MovesOperationToPaused()
+    {
+        MachineOperation operation = CreateRunningOperation();
+
+        SeedHierarchy(operation.WorkpieceId);
+        _factory.MachineOperationRepository.Seed(operation);
+
+        await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/fault",
+            new FaultMachineOperationRequest(
+                FailureReason: "Assist gas pressure drop",
+                AlarmCode: "ALARM-001",
+                AlarmMessage: "Gas pressure is below threshold.",
+                Severity: "Warning"
+            )
+        );
+
+        MachineAlarm alarm = (
+            await _factory.MachineAlarmRepository.GetByOperationIdAsync(
+                operation.Id,
+                CancellationToken.None
+            )
+        ).Single();
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/alarms/{alarm.Id}/resolve",
+            new ResolveMachineAlarmRequest("Pressure stabilized")
+        );
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+        MachineAlarm? storedAlarm = await _factory.MachineAlarmRepository.GetByIdAsync(
+            alarm.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.NotNull(storedAlarm);
+        Assert.Equal(MachineOperationStatus.Paused, storedOperation.Status);
+        Assert.Equal("Assist gas pressure drop", storedOperation.FailureReason);
+        Assert.Equal(MachineAlarmStatus.Resolved, storedAlarm.Status);
+        Assert.Equal("Pressure stabilized", storedAlarm.ResolutionNotes);
+    }
+
     private static MachineOperation CreateQueuedOperation()
     {
         return new MachineOperation(
@@ -469,6 +567,7 @@ public sealed class OperationTransitionEndpointTests
         Workpiece workpiece = new(
             id: workpieceId,
             productionLotId: productionLot.Id,
+            sequenceNumber: 1,
             code: $"WP-{workpieceId:N}",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow

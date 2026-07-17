@@ -5,7 +5,6 @@ using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Infrastructure.Production.InMemory;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace MachineMonitoring.Tests.Production;
 
@@ -21,11 +20,13 @@ public sealed class MachineOperationSimulatorTests
         InMemoryProductionCatalog catalog = new();
         InMemoryWorkpieceRepository workpieceRepository = new();
         InMemoryProductionLotRepository productionLotRepository = new();
+        InMemoryMachineOperationEventRepository eventRepository = new();
 
         ProductionSequenceService sequenceService = new(
             productionLotRepository,
             workpieceRepository,
             _operationRepository,
+            eventRepository,
             new NoOpProductionTransactionManager(),
             NullLogger<ProductionSequenceService>.Instance
         );
@@ -37,6 +38,9 @@ public sealed class MachineOperationSimulatorTests
             machineCapabilitiesRepository: new InMemoryMachineCapabilitiesRepository(catalog),
             workpieceRepository: workpieceRepository,
             machineOperationRepository: _operationRepository,
+            machineOperationEventRepository: eventRepository,
+            machineAlarmRepository: new InMemoryMachineAlarmRepository(),
+            transactionManager: new NoOpProductionTransactionManager(),
             productionSequenceService: sequenceService,
             configurationValidator: new Domain.Technology.LaserCutConfigurationValidator(),
             logger: NullLogger<MachineOperationApplicationService>.Instance
@@ -44,15 +48,7 @@ public sealed class MachineOperationSimulatorTests
 
         _simulator = new MachineOperationSimulator(
             _operationService,
-            Options.Create(
-                new OperationSimulatorOptions
-                {
-                    ProgressIncrement = 20,
-                    ProgressIntervalSeconds = 1,
-                    PollingIntervalSeconds = 1,
-                    InitialPhase = "Preparing laser",
-                }
-            ),
+            new FixedOperationProgressStrategy(20),
             NullLogger<MachineOperationSimulator>.Instance
         );
 
@@ -65,6 +61,7 @@ public sealed class MachineOperationSimulatorTests
         Workpiece workpiece = new(
             id: Guid.NewGuid(),
             productionLotId: lot.Id,
+            sequenceNumber: 1,
             code: "WP-SIM-001",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow
@@ -133,6 +130,39 @@ public sealed class MachineOperationSimulatorTests
         Assert.Equal(0, storedOperation.ProgressPercentage);
     }
 
+    [Fact]
+    public async Task ProcessRunningOperationAsync_IgnoresFaultedOperation()
+    {
+        MachineOperation operation = new(
+            id: Guid.NewGuid(),
+            workpieceId: _workpieceId,
+            sequenceNumber: 1,
+            machineId: "M-001",
+            type: MachineOperationType.LaserCutting,
+            createdAt: DateTimeOffset.UtcNow
+        );
+        operation.Start(DateTimeOffset.UtcNow, "Preparing laser");
+        operation.UpdateProgress(40, "Laser cutting");
+        operation.Fault("Gas pressure drop");
+
+        await _operationRepository.AddAsync(
+            operation,
+            CreateConfiguration(operation.Id),
+            CancellationToken.None
+        );
+
+        await _simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
+
+        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
+        Assert.Equal(40, storedOperation.ProgressPercentage);
+    }
+
     private static Domain.Technology.LaserCutConfiguration CreateConfiguration(Guid operationId)
     {
         return new Domain.Technology.LaserCutConfiguration(
@@ -161,6 +191,68 @@ public sealed class MachineOperationSimulatorTests
         {
             return operation(cancellationToken);
         }
+    }
+
+    private sealed class FixedOperationProgressStrategy : IOperationProgressStrategy
+    {
+        private readonly int _increment;
+
+        public FixedOperationProgressStrategy(int increment)
+        {
+            _increment = increment;
+        }
+
+        public int GetNextIncrement()
+        {
+            return _increment;
+        }
+    }
+
+    private sealed class InMemoryMachineOperationEventRepository
+        : IMachineOperationEventRepository
+    {
+        public Task AddAsync(
+            MachineOperationEvent machineOperationEvent,
+            CancellationToken cancellationToken
+        ) => Task.CompletedTask;
+
+        public Task<IReadOnlyCollection<MachineOperationEvent>> GetByOperationIdAsync(
+            Guid operationId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyCollection<MachineOperationEvent>>([]);
+
+        public Task<IReadOnlyCollection<MachineOperationEvent>> GetByWorkpieceIdAsync(
+            Guid workpieceId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyCollection<MachineOperationEvent>>([]);
+
+        public Task<IReadOnlyCollection<MachineOperationEvent>> GetByProductionLotIdAsync(
+            Guid productionLotId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyCollection<MachineOperationEvent>>([]);
+    }
+
+    private sealed class InMemoryMachineAlarmRepository : IMachineAlarmRepository
+    {
+        public Task<MachineAlarm?> GetByIdAsync(Guid alarmId, CancellationToken cancellationToken)
+            => Task.FromResult<MachineAlarm?>(null);
+
+        public Task<IReadOnlyCollection<MachineAlarm>> GetByMachineIdAsync(
+            string machineId,
+            bool activeOnly,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyCollection<MachineAlarm>>([]);
+
+        public Task<IReadOnlyCollection<MachineAlarm>> GetByOperationIdAsync(
+            Guid operationId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyCollection<MachineAlarm>>([]);
+
+        public Task AddAsync(MachineAlarm alarm, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public Task UpdateAsync(MachineAlarm alarm, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class InMemoryWorkpieceRepository : IWorkpieceRepository

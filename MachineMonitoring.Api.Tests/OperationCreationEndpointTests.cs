@@ -230,6 +230,7 @@ public sealed class OperationCreationEndpointTests
         Workpiece workpiece = new(
             id: WorkpieceId,
             productionLotId: productionLot.Id,
+            sequenceNumber: 1,
             code: "WP-001",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow

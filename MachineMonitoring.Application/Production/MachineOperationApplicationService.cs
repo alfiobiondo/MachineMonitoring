@@ -16,6 +16,9 @@ public sealed class MachineOperationApplicationService
     private readonly IMachineCapabilitiesRepository _machineCapabilitiesRepository;
     private readonly IWorkpieceRepository _workpieceRepository;
     private readonly IMachineOperationRepository _machineOperationRepository;
+    private readonly IMachineOperationEventRepository _machineOperationEventRepository;
+    private readonly IMachineAlarmRepository _machineAlarmRepository;
+    private readonly IProductionTransactionManager _transactionManager;
     private readonly ProductionSequenceService _productionSequenceService;
     private readonly LaserCutConfigurationValidator _configurationValidator;
     private readonly ILogger<MachineOperationApplicationService> _logger;
@@ -27,6 +30,9 @@ public sealed class MachineOperationApplicationService
         IMachineCapabilitiesRepository machineCapabilitiesRepository,
         IWorkpieceRepository workpieceRepository,
         IMachineOperationRepository machineOperationRepository,
+        IMachineOperationEventRepository machineOperationEventRepository,
+        IMachineAlarmRepository machineAlarmRepository,
+        IProductionTransactionManager transactionManager,
         ProductionSequenceService productionSequenceService,
         LaserCutConfigurationValidator configurationValidator,
         ILogger<MachineOperationApplicationService> logger
@@ -40,6 +46,9 @@ public sealed class MachineOperationApplicationService
         ArgumentNullException.ThrowIfNull(machineCapabilitiesRepository);
         ArgumentNullException.ThrowIfNull(workpieceRepository);
         ArgumentNullException.ThrowIfNull(machineOperationRepository);
+        ArgumentNullException.ThrowIfNull(machineOperationEventRepository);
+        ArgumentNullException.ThrowIfNull(machineAlarmRepository);
+        ArgumentNullException.ThrowIfNull(transactionManager);
         ArgumentNullException.ThrowIfNull(productionSequenceService);
         ArgumentNullException.ThrowIfNull(configurationValidator);
         ArgumentNullException.ThrowIfNull(logger);
@@ -50,6 +59,9 @@ public sealed class MachineOperationApplicationService
         _machineCapabilitiesRepository = machineCapabilitiesRepository;
         _workpieceRepository = workpieceRepository;
         _machineOperationRepository = machineOperationRepository;
+        _machineOperationEventRepository = machineOperationEventRepository;
+        _machineAlarmRepository = machineAlarmRepository;
+        _transactionManager = transactionManager;
         _productionSequenceService = productionSequenceService;
         _configurationValidator = configurationValidator;
         _logger = logger;
@@ -111,6 +123,15 @@ public sealed class MachineOperationApplicationService
         _configurationValidator.Validate(configuration, material, nozzle, capabilities);
 
         await _machineOperationRepository.AddAsync(operation, configuration, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Created,
+            previousStatus: null,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         _logger.LogInformation(
             "Laser-cutting operation {OperationId} created "
@@ -148,6 +169,15 @@ public sealed class MachineOperationApplicationService
         operation.Start(startedAt: DateTimeOffset.UtcNow, initialPhase: command.InitialPhase);
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Started,
+            previousStatus: MachineOperationStatus.Queued,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         _logger.LogInformation("Machine operation {OperationId} started.", operation.Id);
     }
@@ -167,6 +197,15 @@ public sealed class MachineOperationApplicationService
         operation.Pause();
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Paused,
+            previousStatus: MachineOperationStatus.Running,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         _logger.LogInformation("Machine operation {OperationId} paused.", operation.Id);
     }
@@ -186,6 +225,15 @@ public sealed class MachineOperationApplicationService
         operation.Resume();
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Resumed,
+            previousStatus: MachineOperationStatus.Paused,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         _logger.LogInformation("Machine operation {OperationId} resumed.", operation.Id);
     }
@@ -233,6 +281,15 @@ public sealed class MachineOperationApplicationService
         operation.Complete(completedAt: DateTimeOffset.UtcNow);
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Completed,
+            previousStatus: MachineOperationStatus.Running,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         await _productionSequenceService.HandleOperationCompletedAsync(
             operation,
@@ -258,6 +315,15 @@ public sealed class MachineOperationApplicationService
         operation.Fail(failureReason: command.FailureReason);
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Failed,
+            previousStatus: MachineOperationStatus.Running,
+            newStatus: operation.Status,
+            reason: operation.FailureReason,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         await _productionSequenceService.HandleOperationBlockedAsync(
             operation.Id,
@@ -286,6 +352,15 @@ public sealed class MachineOperationApplicationService
         operation.Cancel();
 
         await _machineOperationRepository.UpdateAsync(operation, cancellationToken);
+        await AppendEventAsync(
+            operation,
+            MachineOperationEventType.Cancelled,
+            previousStatus: null,
+            newStatus: operation.Status,
+            reason: null,
+            machineAlarmId: null,
+            cancellationToken: cancellationToken
+        );
 
         await _productionSequenceService.HandleOperationBlockedAsync(
             operation.Id,
@@ -293,6 +368,48 @@ public sealed class MachineOperationApplicationService
         );
 
         _logger.LogInformation("Machine operation {OperationId} cancelled.", operation.Id);
+    }
+
+    public Task FaultAsync(
+        FaultMachineOperationCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return _transactionManager.ExecuteAsync(
+            async ct =>
+            {
+                MachineOperation operation = await GetRequiredOperationAsync(command.OperationId, ct);
+
+                operation.Fault(command.FailureReason);
+                await _machineOperationRepository.UpdateAsync(operation, ct);
+
+                MachineAlarm alarm = new(
+                    id: Guid.NewGuid(),
+                    machineId: operation.MachineId,
+                    machineOperationId: operation.Id,
+                    code: command.AlarmCode,
+                    severity: command.Severity,
+                    message: command.AlarmMessage,
+                    raisedAt: DateTimeOffset.UtcNow
+                );
+
+                await _machineAlarmRepository.AddAsync(alarm, ct);
+                await AppendEventAsync(
+                    operation,
+                    MachineOperationEventType.Faulted,
+                    previousStatus: MachineOperationStatus.Running,
+                    newStatus: operation.Status,
+                    reason: command.FailureReason,
+                    machineAlarmId: alarm.Id,
+                    cancellationToken: ct
+                );
+
+                await _productionSequenceService.HandleOperationBlockedAsync(operation.Id, ct);
+            },
+            cancellationToken
+        );
     }
 
     public async Task<MachineOperationDetailsResult> GetDetailsAsync(
@@ -532,5 +649,32 @@ public sealed class MachineOperationApplicationService
                 $"Unsupported geometry type " + $"'{geometry.GetType().Name}'."
             ),
         };
+    }
+
+    private Task AppendEventAsync(
+        MachineOperation operation,
+        MachineOperationEventType eventType,
+        MachineOperationStatus? previousStatus,
+        MachineOperationStatus? newStatus,
+        string? reason,
+        Guid? machineAlarmId,
+        CancellationToken cancellationToken
+    )
+    {
+        MachineOperationEvent machineOperationEvent = new(
+            id: Guid.NewGuid(),
+            machineOperationId: operation.Id,
+            eventType: eventType,
+            occurredAt: DateTimeOffset.UtcNow,
+            previousStatus: previousStatus,
+            newStatus: newStatus,
+            progressPercentage: operation.ProgressPercentage,
+            phase: operation.CurrentPhase,
+            reason: reason,
+            machineAlarmId: machineAlarmId,
+            metadata: null
+        );
+
+        return _machineOperationEventRepository.AddAsync(machineOperationEvent, cancellationToken);
     }
 }

@@ -37,6 +37,7 @@ public sealed class ProductionLotApplicationService
         return _productionSequenceService.StartProductionLotAsync(
             command.ProductionLotId,
             command.InitialPhase,
+            command.StartFromWorkpieceSequenceNumber,
             cancellationToken
         );
     }
@@ -63,7 +64,9 @@ public sealed class ProductionLotApplicationService
 
         List<WorkpieceDetailsResult> workpieceResults = [];
 
-        foreach (Domain.Production.Workpiece workpiece in workpieces.OrderBy(item => item.Code))
+        foreach (
+            Domain.Production.Workpiece workpiece in workpieces.OrderBy(item => item.SequenceNumber)
+        )
         {
             IReadOnlyCollection<Domain.Production.MachineOperation> operations =
                 await _machineOperationRepository.GetOrderedByWorkpieceIdAsync(
@@ -75,6 +78,7 @@ public sealed class ProductionLotApplicationService
                 new WorkpieceDetailsResult(
                     Id: workpiece.Id,
                     ProductionLotId: workpiece.ProductionLotId,
+                    SequenceNumber: workpiece.SequenceNumber,
                     Code: workpiece.Code,
                     MaterialCode: workpiece.MaterialCode,
                     Status: workpiece.Status,

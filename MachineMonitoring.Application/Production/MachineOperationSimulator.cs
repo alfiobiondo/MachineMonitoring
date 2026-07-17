@@ -11,22 +11,22 @@ public sealed class MachineOperationSimulator
 {
     private readonly MachineOperationApplicationService _operationService;
 
-    private readonly OperationSimulatorOptions _options;
+    private readonly IOperationProgressStrategy _progressStrategy;
 
     private readonly ILogger<MachineOperationSimulator> _logger;
 
     public MachineOperationSimulator(
         MachineOperationApplicationService operationService,
-        IOptions<OperationSimulatorOptions> options,
+        IOperationProgressStrategy progressStrategy,
         ILogger<MachineOperationSimulator> logger
     )
     {
         ArgumentNullException.ThrowIfNull(operationService);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(progressStrategy);
         ArgumentNullException.ThrowIfNull(logger);
 
         _operationService = operationService;
-        _options = options.Value;
+        _progressStrategy = progressStrategy;
         _logger = logger;
     }
 
@@ -42,7 +42,10 @@ public sealed class MachineOperationSimulator
             return;
         }
 
-        int updatedProgress = Math.Min(100, operation.ProgressPercentage + _options.ProgressIncrement);
+        int updatedProgress = Math.Min(
+            100,
+            operation.ProgressPercentage + _progressStrategy.GetNextIncrement()
+        );
 
         if (updatedProgress >= 100)
         {

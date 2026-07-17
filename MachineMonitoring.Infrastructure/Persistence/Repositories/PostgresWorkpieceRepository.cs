@@ -33,7 +33,7 @@ public sealed class PostgresWorkpieceRepository : IWorkpieceRepository
         List<WorkpieceRecord> records = await _dbContext
             .Workpieces.AsNoTracking()
             .Where(item => item.ProductionLotId == productionLotId)
-            .OrderBy(item => item.Code)
+            .OrderBy(item => item.SequenceNumber)
             .ThenBy(item => item.Id)
             .ToListAsync(cancellationToken);
 
@@ -76,6 +76,7 @@ public sealed class PostgresWorkpieceRepository : IWorkpieceRepository
         {
             Id = workpiece.Id,
             ProductionLotId = workpiece.ProductionLotId,
+            SequenceNumber = workpiece.SequenceNumber,
             Code = workpiece.Code,
             MaterialCode = workpiece.MaterialCode,
             Status = workpiece.Status,
@@ -91,6 +92,7 @@ public sealed class PostgresWorkpieceRepository : IWorkpieceRepository
         return Workpiece.Restore(
             id: record.Id,
             productionLotId: record.ProductionLotId,
+            sequenceNumber: record.SequenceNumber,
             code: record.Code,
             materialCode: record.MaterialCode,
             status: record.Status,

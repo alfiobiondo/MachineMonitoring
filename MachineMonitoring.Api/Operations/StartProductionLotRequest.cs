@@ -1,3 +1,6 @@
 namespace MachineMonitoring.Api.Operations;
 
-public sealed record StartProductionLotRequest(string InitialPhase);
+public sealed record StartProductionLotRequest(
+    string InitialPhase,
+    int? StartFromWorkpieceSequenceNumber
+);

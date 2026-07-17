@@ -158,6 +158,23 @@ app.MapGet(
     .WithName("GetMachineOperation")
     .WithTags("Operations");
 
+app.MapGet(
+        "/api/operations/{operationId:guid}/events",
+        async (
+            Guid operationId,
+            MachineOperationEventApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            IReadOnlyCollection<MachineOperationEventResult> result =
+                await service.GetByOperationIdAsync(operationId, cancellationToken);
+
+            return Results.Ok(result.Select(CreateOperationEventResponse).ToArray());
+        }
+    )
+    .WithName("GetOperationEvents")
+    .WithTags("Operations");
+
 app.MapPost(
         "/api/operations",
         async (
@@ -218,7 +235,8 @@ app.MapPost(
         {
             StartWorkpieceCommand command = new(
                 WorkpieceId: workpieceId,
-                InitialPhase: request.InitialPhase
+                InitialPhase: request.InitialPhase,
+                StartFromSequenceNumber: request.StartFromSequenceNumber
             );
 
             await service.StartAsync(command, cancellationToken);
@@ -227,6 +245,23 @@ app.MapPost(
         }
     )
     .WithName("StartWorkpiece")
+    .WithTags("Production");
+
+app.MapGet(
+        "/api/workpieces/{workpieceId:guid}/events",
+        async (
+            Guid workpieceId,
+            MachineOperationEventApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            IReadOnlyCollection<MachineOperationEventResult> result =
+                await service.GetByWorkpieceIdAsync(workpieceId, cancellationToken);
+
+            return Results.Ok(result.Select(CreateOperationEventResponse).ToArray());
+        }
+    )
+    .WithName("GetWorkpieceEvents")
     .WithTags("Production");
 
 app.MapPost(
@@ -240,7 +275,8 @@ app.MapPost(
         {
             StartProductionLotCommand command = new(
                 ProductionLotId: productionLotId,
-                InitialPhase: request.InitialPhase
+                InitialPhase: request.InitialPhase,
+                StartFromWorkpieceSequenceNumber: request.StartFromWorkpieceSequenceNumber
             );
 
             await service.StartAsync(command, cancellationToken);
@@ -249,6 +285,23 @@ app.MapPost(
         }
     )
     .WithName("StartProductionLot")
+    .WithTags("Production");
+
+app.MapGet(
+        "/api/production-lots/{productionLotId:guid}/events",
+        async (
+            Guid productionLotId,
+            MachineOperationEventApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            IReadOnlyCollection<MachineOperationEventResult> result =
+                await service.GetByProductionLotIdAsync(productionLotId, cancellationToken);
+
+            return Results.Ok(result.Select(CreateOperationEventResponse).ToArray());
+        }
+    )
+    .WithName("GetProductionLotEvents")
     .WithTags("Production");
 
 app.MapGet(
@@ -427,6 +480,121 @@ app.MapPost(
     )
     .WithName("FailMachineOperation")
     .WithTags("Operations");
+
+app.MapPost(
+        "/api/operations/{operationId:guid}/fault",
+        async (
+            Guid operationId,
+            FaultMachineOperationRequest request,
+            MachineOperationApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            bool isValidSeverity = Enum.TryParse(
+                request.Severity,
+                ignoreCase: true,
+                out MachineAlarmSeverity severity
+            );
+
+            if (!isValidSeverity)
+            {
+                throw new ArgumentException($"Invalid machine alarm severity '{request.Severity}'.");
+            }
+
+            FaultMachineOperationCommand command = new(
+                OperationId: operationId,
+                FailureReason: request.FailureReason,
+                AlarmCode: request.AlarmCode,
+                AlarmMessage: request.AlarmMessage,
+                Severity: severity
+            );
+
+            await service.FaultAsync(command, cancellationToken);
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("FaultMachineOperation")
+    .WithTags("Operations");
+
+app.MapGet(
+        "/api/operations/{operationId:guid}/alarms",
+        async (
+            Guid operationId,
+            MachineAlarmApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            IReadOnlyCollection<MachineAlarmResult> result = await service.GetByOperationIdAsync(
+                operationId,
+                cancellationToken
+            );
+
+            return Results.Ok(result.Select(CreateMachineAlarmResponse).ToArray());
+        }
+    )
+    .WithName("GetOperationAlarms")
+    .WithTags("Operations");
+
+app.MapPost(
+        "/api/alarms/{alarmId:guid}/acknowledge",
+        async (
+            Guid alarmId,
+            MachineAlarmApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.AcknowledgeAsync(
+                new AcknowledgeMachineAlarmCommand(alarmId),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("AcknowledgeMachineAlarm")
+    .WithTags("Alarms");
+
+app.MapPost(
+        "/api/alarms/{alarmId:guid}/resolve",
+        async (
+            Guid alarmId,
+            ResolveMachineAlarmRequest request,
+            MachineAlarmApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            await service.ResolveAsync(
+                new ResolveMachineAlarmCommand(alarmId, request.ResolutionNotes),
+                cancellationToken
+            );
+
+            return Results.NoContent();
+        }
+    )
+    .WithName("ResolveMachineAlarm")
+    .WithTags("Alarms");
+
+app.MapGet(
+        "/api/machines/{machineId}/alarms",
+        async (
+            string machineId,
+            bool? activeOnly,
+            MachineAlarmApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            IReadOnlyCollection<MachineAlarmResult> result = await service.GetByMachineIdAsync(
+                machineId,
+                activeOnly ?? false,
+                cancellationToken
+            );
+
+            return Results.Ok(result.Select(CreateMachineAlarmResponse).ToArray());
+        }
+    )
+    .WithName("GetMachineAlarms")
+    .WithTags("Alarms");
 
 app.MapGet(
         "/api/materials",
@@ -693,6 +861,7 @@ static WorkpieceDetailsResponse CreateWorkpieceDetailsResponse(WorkpieceDetailsR
     return new WorkpieceDetailsResponse(
         Id: result.Id,
         ProductionLotId: result.ProductionLotId,
+        SequenceNumber: result.SequenceNumber,
         Code: result.Code,
         MaterialCode: result.MaterialCode,
         Status: result.Status.ToString(),
@@ -732,6 +901,46 @@ static ProductionLotDetailsResponse CreateProductionLotDetailsResponse(
         StartedAt: result.StartedAt,
         CompletedAt: result.CompletedAt,
         Workpieces: result.Workpieces.Select(CreateWorkpieceDetailsResponse).ToArray()
+    );
+}
+
+static MachineOperationEventResponse CreateOperationEventResponse(
+    MachineOperationEventResult result
+)
+{
+    return new MachineOperationEventResponse(
+        Id: result.Id,
+        MachineOperationId: result.MachineOperationId,
+        WorkpieceId: result.WorkpieceId,
+        ProductionLotId: result.ProductionLotId,
+        OperationSequenceNumber: result.OperationSequenceNumber,
+        WorkpieceSequenceNumber: result.WorkpieceSequenceNumber,
+        EventType: result.EventType.ToString(),
+        OccurredAt: result.OccurredAt,
+        PreviousStatus: result.PreviousStatus?.ToString(),
+        NewStatus: result.NewStatus?.ToString(),
+        ProgressPercentage: result.ProgressPercentage,
+        Phase: result.Phase,
+        Reason: result.Reason,
+        MachineAlarmId: result.MachineAlarmId,
+        Metadata: result.Metadata
+    );
+}
+
+static MachineAlarmResponse CreateMachineAlarmResponse(MachineAlarmResult result)
+{
+    return new MachineAlarmResponse(
+        Id: result.Id,
+        MachineId: result.MachineId,
+        MachineOperationId: result.MachineOperationId,
+        Code: result.Code,
+        Severity: result.Severity.ToString(),
+        Status: result.Status.ToString(),
+        Message: result.Message,
+        RaisedAt: result.RaisedAt,
+        AcknowledgedAt: result.AcknowledgedAt,
+        ResolvedAt: result.ResolvedAt,
+        ResolutionNotes: result.ResolutionNotes
     );
 }
 

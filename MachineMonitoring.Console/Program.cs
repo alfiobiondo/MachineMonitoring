@@ -54,6 +54,10 @@ builder
     .Services.AddOptions<OperationSimulatorOptions>()
     .Bind(builder.Configuration.GetSection(OperationSimulatorOptions.SectionName))
     .ValidateDataAnnotations()
+    .Validate(
+        options => options.MaximumProgressIncrement >= options.MinimumProgressIncrement,
+        "MaximumProgressIncrement must be greater than or equal to MinimumProgressIncrement."
+    )
     .ValidateOnStart();
 
 builder.Services.AddMemoryCache();

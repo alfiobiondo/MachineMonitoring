@@ -8,6 +8,8 @@ public sealed class Workpiece
 
     public Guid ProductionLotId { get; }
 
+    public int SequenceNumber { get; }
+
     public string Code { get; }
 
     public string MaterialCode { get; }
@@ -25,6 +27,7 @@ public sealed class Workpiece
     public Workpiece(
         Guid id,
         Guid productionLotId,
+        int sequenceNumber,
         string code,
         string materialCode,
         DateTimeOffset createdAt
@@ -43,11 +46,20 @@ public sealed class Workpiece
             );
         }
 
+        if (sequenceNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sequenceNumber),
+                "The workpiece sequence number must be greater than zero."
+            );
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         ArgumentException.ThrowIfNullOrWhiteSpace(materialCode);
 
         Id = id;
         ProductionLotId = productionLotId;
+        SequenceNumber = sequenceNumber;
         Code = code;
         MaterialCode = materialCode;
         CreatedAt = createdAt;
@@ -57,7 +69,13 @@ public sealed class Workpiece
 
     public void StartSequence(DateTimeOffset startedAt)
     {
-        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
+        if (
+            Status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+                or WorkpieceStatus.Skipped
+        )
         {
             throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot activate its sequence from status {Status}."
@@ -80,7 +98,13 @@ public sealed class Workpiece
 
     public void Complete(DateTimeOffset completedAt)
     {
-        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
+        if (
+            Status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+                or WorkpieceStatus.Skipped
+        )
         {
             throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot be completed from status {Status}."
@@ -94,7 +118,13 @@ public sealed class Workpiece
 
     public void Fail(DateTimeOffset failedAt)
     {
-        if (Status is WorkpieceStatus.Completed or WorkpieceStatus.Failed or WorkpieceStatus.Cancelled)
+        if (
+            Status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+                or WorkpieceStatus.Skipped
+        )
         {
             throw new BusinessRuleViolationException(
                 $"Workpiece {Code} cannot fail from status {Status}."
@@ -113,6 +143,7 @@ public sealed class Workpiece
             is WorkpieceStatus.Completed
                 or WorkpieceStatus.Failed
                 or WorkpieceStatus.Cancelled
+                or WorkpieceStatus.Skipped
         )
         {
             throw new BusinessRuleViolationException(
@@ -125,9 +156,24 @@ public sealed class Workpiece
         CompletedAt = cancelledAt;
     }
 
+    public void Skip(DateTimeOffset skippedAt)
+    {
+        if (Status != WorkpieceStatus.Pending)
+        {
+            throw new BusinessRuleViolationException(
+                $"Workpiece {Code} cannot be skipped from status {Status}."
+            );
+        }
+
+        Status = WorkpieceStatus.Skipped;
+        IsSequenceActive = false;
+        CompletedAt = skippedAt;
+    }
+
     public static Workpiece Restore(
         Guid id,
         Guid productionLotId,
+        int sequenceNumber,
         string code,
         string materialCode,
         WorkpieceStatus status,
@@ -140,6 +186,7 @@ public sealed class Workpiece
         Workpiece workpiece = new(
             id: id,
             productionLotId: productionLotId,
+            sequenceNumber: sequenceNumber,
             code: code,
             materialCode: materialCode,
             createdAt: createdAt

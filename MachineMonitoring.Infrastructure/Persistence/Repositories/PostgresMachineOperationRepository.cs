@@ -111,7 +111,8 @@ public sealed class PostgresMachineOperationRepository : IMachineOperationReposi
             operation =>
                 operation.WorkpieceId == workpieceId
                 && operation.SequenceNumber < sequenceNumber
-                && operation.Status != MachineOperationStatus.Completed,
+                && operation.Status != MachineOperationStatus.Completed
+                && operation.Status != MachineOperationStatus.Skipped,
             cancellationToken
         );
     }

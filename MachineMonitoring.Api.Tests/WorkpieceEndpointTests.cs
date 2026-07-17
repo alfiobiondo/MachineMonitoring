@@ -22,6 +22,8 @@ public sealed class WorkpieceEndpointTests
         _factory.MachineOperationRepository.Clear();
         _factory.WorkpieceRepository.Clear();
         _factory.ProductionLotRepository.Clear();
+        _factory.MachineOperationEventRepository.Clear();
+        _factory.MachineAlarmRepository.Clear();
     }
 
     [Fact]
@@ -39,7 +41,7 @@ public sealed class WorkpieceEndpointTests
         // Act
         HttpResponseMessage response = await _client.PostAsJsonAsync(
             $"/api/workpieces/{workpiece.Id}/start",
-            new StartWorkpieceRequest("Preparing laser")
+            new StartWorkpieceRequest("Preparing laser", null)
         );
 
         // Assert
@@ -132,6 +134,7 @@ public sealed class WorkpieceEndpointTests
         // Assert
         Assert.NotNull(response);
         Assert.True(response.IsSequenceActive);
+        Assert.Equal(1, response.SequenceNumber);
         Assert.Equal(2, response.Operations.Count);
         Assert.Equal(1, response.Operations.First().SequenceNumber);
     }
@@ -148,6 +151,7 @@ public sealed class WorkpieceEndpointTests
         Workpiece workpiece = new(
             id: Guid.NewGuid(),
             productionLotId: lot.Id,
+            sequenceNumber: 1,
             code: $"WP-{Guid.NewGuid():N}",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow

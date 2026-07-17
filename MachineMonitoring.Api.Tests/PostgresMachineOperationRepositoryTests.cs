@@ -46,6 +46,7 @@ public sealed class PostgresMachineOperationRepositoryTests
         Workpiece workpiece = new(
             id: workpieceId,
             productionLotId: productionLot.Id,
+            sequenceNumber: 1,
             code: "WP-TEST-001",
             materialCode: "INOX-304",
             createdAt: DateTimeOffset.UtcNow

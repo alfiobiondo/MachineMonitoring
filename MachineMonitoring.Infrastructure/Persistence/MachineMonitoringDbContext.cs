@@ -20,6 +20,9 @@ public sealed class MachineMonitoringDbContext : DbContext
     public DbSet<ProductionLotRecord> ProductionLots => Set<ProductionLotRecord>();
     public DbSet<WorkpieceRecord> Workpieces => Set<WorkpieceRecord>();
     public DbSet<MachineOperationRecord> MachineOperations => Set<MachineOperationRecord>();
+    public DbSet<MachineOperationEventRecord> MachineOperationEvents =>
+        Set<MachineOperationEventRecord>();
+    public DbSet<MachineAlarmRecord> MachineAlarms => Set<MachineAlarmRecord>();
     public DbSet<LaserCutConfigurationRecord> LaserCutConfigurations =>
         Set<LaserCutConfigurationRecord>();
 
@@ -37,6 +40,8 @@ public sealed class MachineMonitoringDbContext : DbContext
         ConfigureProductionLot(modelBuilder);
         ConfigureWorkpiece(modelBuilder);
         ConfigureMachineOperation(modelBuilder);
+        ConfigureMachineOperationEvent(modelBuilder);
+        ConfigureMachineAlarm(modelBuilder);
         ConfigureLaserCutConfiguration(modelBuilder);
     }
 
@@ -385,6 +390,120 @@ public sealed class MachineMonitoringDbContext : DbContext
         });
     }
 
+    private static void ConfigureMachineOperationEvent(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MachineOperationEventRecord>(entity =>
+        {
+            entity.ToTable("machine_operation_events");
+
+            entity.HasKey(item => item.Id);
+
+            entity.Property(item => item.Id).HasColumnName("id");
+
+            entity
+                .Property(item => item.MachineOperationId)
+                .HasColumnName("machine_operation_id")
+                .IsRequired();
+
+            entity
+                .Property(item => item.EventType)
+                .HasColumnName("event_type")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(item => item.OccurredAt).HasColumnName("occurred_at").IsRequired();
+
+            entity
+                .Property(item => item.PreviousStatus)
+                .HasColumnName("previous_status")
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            entity
+                .Property(item => item.NewStatus)
+                .HasColumnName("new_status")
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            entity.Property(item => item.ProgressPercentage).HasColumnName("progress_percentage");
+
+            entity.Property(item => item.Phase).HasColumnName("phase").HasMaxLength(200);
+
+            entity.Property(item => item.Reason).HasColumnName("reason").HasMaxLength(500);
+
+            entity.Property(item => item.MachineAlarmId).HasColumnName("machine_alarm_id");
+
+            entity.Property(item => item.Metadata).HasColumnName("metadata").HasColumnType("text");
+
+            entity.HasIndex(item => new { item.MachineOperationId, item.OccurredAt });
+
+            entity
+                .HasOne(item => item.MachineOperation)
+                .WithMany(operation => operation.Events)
+                .HasForeignKey(item => item.MachineOperationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureMachineAlarm(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MachineAlarmRecord>(entity =>
+        {
+            entity.ToTable("machine_alarms");
+
+            entity.HasKey(item => item.Id);
+
+            entity.Property(item => item.Id).HasColumnName("id");
+
+            entity.Property(item => item.MachineId).HasColumnName("machine_id").HasMaxLength(50);
+
+            entity.Property(item => item.MachineOperationId).HasColumnName("machine_operation_id");
+
+            entity.Property(item => item.Code).HasColumnName("code").HasMaxLength(100).IsRequired();
+
+            entity
+                .Property(item => item.Severity)
+                .HasColumnName("severity")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(item => item.Status)
+                .HasColumnName("status")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity
+                .Property(item => item.Message)
+                .HasColumnName("message")
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(item => item.RaisedAt).HasColumnName("raised_at").IsRequired();
+            entity.Property(item => item.AcknowledgedAt).HasColumnName("acknowledged_at");
+            entity.Property(item => item.ResolvedAt).HasColumnName("resolved_at");
+
+            entity
+                .Property(item => item.ResolutionNotes)
+                .HasColumnName("resolution_notes")
+                .HasMaxLength(1000);
+
+            entity.HasIndex(item => item.MachineId);
+            entity.HasIndex(item => item.Status);
+            entity.HasIndex(item => new { item.MachineId, item.Status });
+            entity.HasIndex(item => item.MachineOperationId);
+
+            entity
+                .HasOne(item => item.MachineOperation)
+                .WithMany(operation => operation.MachineAlarms)
+                .HasForeignKey(item => item.MachineOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
     private static void ConfigureLaserCutConfiguration(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<LaserCutConfigurationRecord>(entity =>
@@ -564,6 +683,11 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .HasColumnName("production_lot_id")
                 .IsRequired();
 
+            entity
+                .Property(workpiece => workpiece.SequenceNumber)
+                .HasColumnName("sequence_number")
+                .IsRequired();
+
             entity.Property(workpiece => workpiece.Code).HasColumnName("code").HasMaxLength(100).IsRequired();
 
             entity
@@ -590,6 +714,13 @@ public sealed class MachineMonitoringDbContext : DbContext
 
             entity.HasIndex(workpiece => workpiece.ProductionLotId);
             entity.HasIndex(workpiece => workpiece.Status);
+            entity.HasIndex(workpiece => new { workpiece.ProductionLotId, workpiece.SequenceNumber }).IsUnique();
+            entity.HasIndex(workpiece => new
+            {
+                workpiece.ProductionLotId,
+                workpiece.Status,
+                workpiece.SequenceNumber,
+            });
 
             entity
                 .HasOne(workpiece => workpiece.ProductionLot)

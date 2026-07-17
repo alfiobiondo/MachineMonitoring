@@ -7,4 +7,5 @@ public enum WorkpieceStatus
     Completed,
     Failed,
     Cancelled,
+    Skipped,
 }

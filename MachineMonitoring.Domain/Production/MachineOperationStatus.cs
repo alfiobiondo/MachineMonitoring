@@ -5,7 +5,9 @@ public enum MachineOperationStatus
     Queued,
     Running,
     Paused,
+    Faulted,
     Completed,
     Failed,
     Cancelled,
+    Skipped,
 }

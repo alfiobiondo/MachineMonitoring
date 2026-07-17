@@ -42,6 +42,8 @@ public static class DependencyInjection
         services.AddScoped<IProductionTransactionManager, EfCoreProductionTransactionManager>();
         services.AddScoped<IProductionLotRepository, PostgresProductionLotRepository>();
         services.AddScoped<IWorkpieceRepository, PostgresWorkpieceRepository>();
+        services.AddScoped<IMachineOperationEventRepository, PostgresMachineOperationEventRepository>();
+        services.AddScoped<IMachineAlarmRepository, PostgresMachineAlarmRepository>();
 
         services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 

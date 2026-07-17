@@ -31,4 +31,8 @@ public sealed class MachineOperationRecord
     public WorkpieceRecord Workpiece { get; set; } = null!;
 
     public LaserCutConfigurationRecord? LaserCutConfiguration { get; set; }
+
+    public List<MachineOperationEventRecord> Events { get; set; } = [];
+
+    public List<MachineAlarmRecord> MachineAlarms { get; set; } = [];
 }
