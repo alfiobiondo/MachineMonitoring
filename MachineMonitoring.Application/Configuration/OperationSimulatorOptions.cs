@@ -18,6 +18,16 @@ public sealed class OperationSimulatorOptions
     [Range(1, 100)]
     public int MaximumProgressIncrement { get; init; } = 25;
 
+    public bool OperationFaultSimulationEnabled { get; init; }
+
+    [Range(0, 100)]
+    public int OperationFaultProbabilityPercentage { get; init; }
+
+    public bool MachineFaultSimulationEnabled { get; init; }
+
+    [Range(0, 100)]
+    public int MachineFaultProbabilityPercentage { get; init; }
+
     [Required]
     public string InitialPhase { get; init; } = "Preparing laser";
 }

@@ -14,11 +14,18 @@ public static class DependencyInjection
 
         services.AddSingleton<LaserCutConfigurationValidator>();
         services.AddSingleton<IOperationProgressStrategy, RandomOperationProgressStrategy>();
+        services.AddSingleton<IOperationFaultStrategy, RandomOperationFaultStrategy>();
+        services.AddSingleton<IMachineFaultStrategy, RandomMachineFaultStrategy>();
+        services.AddSingleton<IBufferedProductionNotificationPublisher, NoOpProductionNotificationPublisher>();
+        services.AddSingleton<IProductionNotificationPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<IBufferedProductionNotificationPublisher>()
+        );
 
         services.AddScoped<ProductionSequenceService>();
         services.AddScoped<MachineOperationApplicationService>();
         services.AddScoped<MachineOperationEventApplicationService>();
         services.AddScoped<MachineAlarmApplicationService>();
+        services.AddScoped<MachineRuntimeApplicationService>();
         services.AddScoped<WorkpieceApplicationService>();
         services.AddScoped<ProductionLotApplicationService>();
 

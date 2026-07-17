@@ -46,9 +46,20 @@ public sealed class MachineOperationSimulatorWorker : BackgroundService
 
                 IMachineOperationRepository repository =
                     scope.ServiceProvider.GetRequiredService<IMachineOperationRepository>();
+                IMachineRuntimeStateRepository runtimeStateRepository =
+                    scope.ServiceProvider.GetRequiredService<IMachineRuntimeStateRepository>();
 
                 IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineOperation> runningOperations =
                     await repository.GetRunningOperationsAsync(stoppingToken);
+                IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineRuntimeState> runtimeStates =
+                    await runtimeStateRepository.GetAllAsync(stoppingToken);
+
+                foreach (
+                    MachineMonitoring.Domain.Production.MachineRuntimeState runtimeState in runtimeStates
+                )
+                {
+                    await simulator.ProcessMachineRuntimeAsync(runtimeState, stoppingToken);
+                }
 
                 foreach (MachineMonitoring.Domain.Production.MachineOperation operation in runningOperations)
                 {

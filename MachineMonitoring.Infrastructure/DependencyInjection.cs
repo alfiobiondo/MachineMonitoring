@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<IWorkpieceRepository, PostgresWorkpieceRepository>();
         services.AddScoped<IMachineOperationEventRepository, PostgresMachineOperationEventRepository>();
         services.AddScoped<IMachineAlarmRepository, PostgresMachineAlarmRepository>();
+        services.AddScoped<IMachineRuntimeStateRepository, PostgresMachineRuntimeStateRepository>();
 
         services.AddScoped<IMaterialRepository, PostgresMaterialRepository>();
 

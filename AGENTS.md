@@ -728,6 +728,47 @@ tabelle che possono già contenere dati:
   verificabile nei test tramite fake deterministiche.
 - La configurazione `OperationSimulator` deve rispettare esplicitamente la
   relazione `MaximumProgressIncrement >= MinimumProgressIncrement`.
+- Lo stato operativo persistente della macchina è separato dal catalogo
+  statico delle macchine e vive in `MachineRuntimeState`.
+- `MachineRuntimeStatus` minimo adottato:
+  `Available`, `Running`, `Paused`, `Faulted`, `Maintenance`, `Offline`.
+- `MachineOperation` e `MachineRuntimeState` devono restare coerenti nella
+  stessa transazione durante `Start`, `Pause`, `Resume`, `Complete`,
+  `Cancel`, `Fail` e `Fault`.
+- I fault casuali della lavorazione e i guasti casuali macchina usano
+  strategie separate:
+  - `IOperationFaultStrategy`;
+  - `IMachineFaultStrategy`.
+- La probabilità di fault casuale è configurabile e disattivata di default.
+- Gli allarmi bloccanti sono definiti centralmente:
+  - `Information`: non bloccante;
+  - `Warning`: non bloccante;
+  - `Error`: bloccante;
+  - `Critical`: bloccante.
+- `Acknowledge` non modifica né `MachineOperation` né `MachineRuntimeState`.
+- `Resolve` di un allarme associato a operazione porta:
+  - `MachineAlarm` a `Resolved`;
+  - `MachineOperation` da `Faulted` a `Paused`;
+  - `MachineRuntimeState` da `Faulted` a `Paused`;
+  - senza ripartenza automatica.
+- `Resume` richiede:
+  - operazione `Paused`;
+  - macchina non `Faulted`, `Maintenance` o `Offline`;
+  - nessun allarme bloccante ancora attivo o acknowledged;
+  - coerenza tra macchina e operazione corrente.
+- I dettagli operazione esposti dall'API includono anche:
+  - stato runtime macchina;
+  - allarme bloccante attivo;
+  - `CanResume`, `CanPause`, `CanFault`.
+- L'Application prepara già un publisher neutro per notifiche future
+  (`IProductionNotificationPublisher`) ma non dipende ancora da SignalR.
 - La migration `AddOperationEventsAndMachineAlarms` deve fare il backfill di
   `workpieces.sequence_number` per lotto con ordinamento `CreatedAt`, `Id`
   prima di applicare `NOT NULL` e indici univoci.
+- Gli endpoint macchina dell'API usano `JsonMachineProvider` anche a runtime
+  reale, non solo nei test.
+- `MachineMonitoring.Api` deve quindi includere `Data/machines.json` nel
+  proprio output, collegandolo dal file già mantenuto nel progetto Console.
+- Senza questo collegamento l'API può compilare e passare i test con fake
+  provider, ma fallire a runtime sugli endpoint `/api/machines*` con errore
+  di file mancante.

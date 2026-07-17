@@ -42,6 +42,24 @@ public sealed class ProductionDatabaseSeeder
             _dbContext.MachineCapabilities.AddRange(records);
         }
 
+        if (!await _dbContext.MachineRuntimeStates.AnyAsync(cancellationToken))
+        {
+            IEnumerable<MachineRuntimeStateRecord> records = InMemoryProductionData
+                .CreateMachineCapabilities()
+                .Select(capabilities => new MachineRuntimeStateRecord
+                {
+                    MachineId = capabilities.MachineId,
+                    Status = Domain.Production.MachineRuntimeStatus.Available,
+                    CurrentOperationId = null,
+                    LastChangedAt = DateTimeOffset.UtcNow,
+                    FailureReason = null,
+                    ActiveAlarmId = null,
+                    Version = 1,
+                });
+
+            _dbContext.MachineRuntimeStates.AddRange(records);
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
