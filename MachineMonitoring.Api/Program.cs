@@ -654,6 +654,25 @@ app.MapGet(
     .WithName("GetMachineRuntimeState")
     .WithTags("Machines");
 
+app.MapGet(
+        "/api/machines/{machineId}/live-snapshot",
+        async (
+            string machineId,
+            ILiveSnapshotQuery query,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            LiveSnapshotResult result = await query.GetByMachineIdAsync(
+                machineId,
+                cancellationToken
+            );
+
+            return Results.Ok(CreateLiveSnapshotResponse(result));
+        }
+    )
+    .WithName("GetMachineLiveSnapshot")
+    .WithTags("Machines");
+
 app.MapPost(
         "/api/machines/{machineId}/fault",
         async (
@@ -1145,6 +1164,67 @@ static MachineDetailsResponse CreateMachineDetailsResponse(MachineDetailsResult 
         SerialNumber: result.SerialNumber,
         CatalogStatus: result.CatalogStatus.ToString(),
         Runtime: CreateMachineRuntimeStateResponse(result.Runtime)
+    );
+}
+
+static LiveSnapshotResponse CreateLiveSnapshotResponse(LiveSnapshotResult result)
+{
+    return new LiveSnapshotResponse(
+        Machine: new LiveSnapshotMachineResponse(
+            Id: result.Machine.Id,
+            Name: result.Machine.Name,
+            Status: result.Machine.Status?.ToString(),
+            LastChangedAt: result.Machine.LastChangedAt
+        ),
+        RuntimeVersion: result.RuntimeVersion,
+        ProductionLot: result.ProductionLot is null
+            ? null
+            : new LiveSnapshotProductionLotResponse(
+                Id: result.ProductionLot.Id,
+                Code: result.ProductionLot.Code,
+                Status: result.ProductionLot.Status.ToString(),
+                ProgressPercentage: result.ProductionLot.ProgressPercentage,
+                CompletedOperations: result.ProductionLot.CompletedOperations,
+                TotalOperations: result.ProductionLot.TotalOperations
+            ),
+        CurrentWorkpiece: result.CurrentWorkpiece is null
+            ? null
+            : new LiveSnapshotWorkpieceResponse(
+                Id: result.CurrentWorkpiece.Id,
+                Code: result.CurrentWorkpiece.Code,
+                Status: result.CurrentWorkpiece.Status.ToString(),
+                SequenceNumber: result.CurrentWorkpiece.SequenceNumber,
+                Position: result.CurrentWorkpiece.Position,
+                TotalWorkpieces: result.CurrentWorkpiece.TotalWorkpieces,
+                ProgressPercentage: result.CurrentWorkpiece.ProgressPercentage,
+                CompletedOperations: result.CurrentWorkpiece.CompletedOperations,
+                TotalOperations: result.CurrentWorkpiece.TotalOperations
+            ),
+        CurrentOperation: result.CurrentOperation is null
+            ? null
+            : new LiveSnapshotOperationResponse(
+                Id: result.CurrentOperation.Id,
+                Type: result.CurrentOperation.Type.ToString(),
+                Status: result.CurrentOperation.Status.ToString(),
+                SequenceNumber: result.CurrentOperation.SequenceNumber,
+                Position: result.CurrentOperation.Position,
+                TotalOperations: result.CurrentOperation.TotalOperations,
+                ProgressPercentage: result.CurrentOperation.ProgressPercentage,
+                CurrentPhase: result.CurrentOperation.CurrentPhase,
+                StartedAt: result.CurrentOperation.StartedAt
+            ),
+        ActiveAlarms: result.ActiveAlarms
+            .Select(alarm => new LiveSnapshotAlarmResponse(
+                Id: alarm.Id,
+                Code: alarm.Code,
+                Severity: alarm.Severity.ToString(),
+                Status: alarm.Status.ToString(),
+                Message: alarm.Message,
+                IsBlocking: alarm.IsBlocking,
+                RaisedAt: alarm.RaisedAt
+            ))
+            .ToArray(),
+        SnapshotAt: result.SnapshotAt
     );
 }
 
