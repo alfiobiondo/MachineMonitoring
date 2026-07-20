@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MachineMonitoring.Infrastructure.Persistence.Outbox;
 
-public sealed class OutboxProcessor
+public sealed class OutboxProcessor : IOutboxProcessor
 {
     private const int MaxLastErrorLength = 1000;
     private readonly MachineMonitoringDbContext _dbContext;
