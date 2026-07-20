@@ -28,6 +28,41 @@ public sealed class ProductionLotEndpointTests
     }
 
     [Fact]
+    public async Task CreateProductionLot_WithValidRequest_ReturnsCreated()
+    {
+        CreateProductionLotRequest request = new("LOT-CREATE-001", 3);
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/production-lots", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        CreateProductionLotResponse? created =
+            await response.Content.ReadFromJsonAsync<CreateProductionLotResponse>();
+
+        Assert.NotNull(created);
+        Assert.NotEqual(Guid.Empty, created.ProductionLotId);
+        Assert.Equal(request.Code, created.Code);
+        Assert.Equal(request.PlannedQuantity, created.PlannedQuantity);
+        Assert.Equal("Planned", created.Status);
+        Assert.NotNull(response.Headers.Location);
+        Assert.EndsWith(
+            $"/api/production-lots/{created.ProductionLotId}",
+            response.Headers.Location!.ToString(),
+            StringComparison.Ordinal
+        );
+
+        ProductionLot? stored = await _factory.ProductionLotRepository.GetByIdAsync(
+            created.ProductionLotId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(stored);
+        Assert.Equal(request.Code, stored.Code);
+        Assert.Equal(request.PlannedQuantity, stored.PlannedQuantity);
+        Assert.Equal(ProductionLotStatus.Planned, stored.Status);
+    }
+
+    [Fact]
     public async Task StartProductionLot_ActivatesAllWorkpiecesAndStartsFirstOperationOfEach()
     {
         // Arrange

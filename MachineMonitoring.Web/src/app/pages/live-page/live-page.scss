@@ -21,11 +21,26 @@
     text-transform: uppercase;
   }
 
+  &__progress-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
   h1 {
     margin: 0 0 0.5rem;
   }
 
   p {
     margin-top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .live-page {
+    &__progress-grid {
+      grid-template-columns: 1fr;
+    }
   }
 }

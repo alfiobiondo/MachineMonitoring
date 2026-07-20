@@ -86,7 +86,22 @@ public sealed class MachineOperationApplicationService
 
         ValidateCreateCommand(command);
 
-        await GetRequiredWorkpieceAsync(command.WorkpieceId, cancellationToken);
+        Workpiece workpiece = await GetRequiredWorkpieceAsync(
+            command.WorkpieceId,
+            cancellationToken
+        );
+
+        if (
+            workpiece.Status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+        )
+        {
+            throw new BusinessRuleViolationException(
+                $"Workpiece {workpiece.Code} cannot accept new operations from status {workpiece.Status}."
+            );
+        }
 
         Material material = await GetRequiredMaterialAsync(command.MaterialId, cancellationToken);
 

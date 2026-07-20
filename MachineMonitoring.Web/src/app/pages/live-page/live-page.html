@@ -5,16 +5,16 @@
     <p>Macchina richiesta: {{ machineId() }}</p>
   </header>
 
-  @if (loading()) {
+  @if (store.loading()) {
     <section class="live-page__state">
       <p>Caricamento dello stato Live…</p>
     </section>
-  } @else if (errorMessage(); as error) {
+  } @else if (store.errorMessage(); as error) {
     <section class="live-page__state live-page__state--error">
       <h2>Errore</h2>
       <p>{{ error }}</p>
     </section>
-  } @else if (snapshot(); as liveSnapshot) {
+  } @else if (store.snapshot(); as liveSnapshot) {
     <section class="live-page__content">
       <h2>{{ liveSnapshot.machine.name }}</h2>
 
@@ -35,14 +35,47 @@
         </div>
       </dl>
 
-      @if (hasProductionContext()) {
-        <pre>{{ liveSnapshot | json }}</pre>
+      @if (store.hasProductionContext()) {
+        <div class="live-page__progress-grid">
+          @if (liveSnapshot.productionLot; as lot) {
+            <app-live-progress-card
+              title="Lotto"
+              [label]="lot.code"
+              [status]="lot.status"
+              [progressPercentage]="lot.progressPercentage"
+              [details]="
+                lot.completedOperations + ' operazioni completate su ' + lot.totalOperations
+              "
+            />
+          }
+
+          @if (liveSnapshot.currentWorkpiece; as workpiece) {
+            <app-live-progress-card
+              title="Pezzo"
+              [label]="workpiece.code"
+              [status]="workpiece.status"
+              [progressPercentage]="workpiece.progressPercentage"
+              [details]="'Posizione ' + workpiece.position + ' di ' + workpiece.totalWorkpieces"
+            />
+          }
+
+          @if (liveSnapshot.currentOperation; as operation) {
+            <app-live-progress-card
+              title="Operazione"
+              [label]="operation.type"
+              [status]="operation.status"
+              [progressPercentage]="operation.progressPercentage"
+              [details]="
+                operation.currentPhase ??
+                'Posizione ' + operation.position + ' di ' + operation.totalOperations
+              "
+            />
+          }
+        </div>
       } @else {
         <section class="live-page__empty">
           <h2>Nessuna lavorazione corrente</h2>
-          <p>
-            La macchina non ha un lotto, un pezzo e una lavorazione correnti.
-          </p>
+          <p>La macchina non ha un lotto, un pezzo e una lavorazione correnti.</p>
         </section>
       }
     </section>

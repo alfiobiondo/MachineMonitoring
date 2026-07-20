@@ -15,9 +15,10 @@ using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
-using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure;
+using MachineMonitoring.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Scalar.AspNetCore;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +52,7 @@ app.UseExceptionHandler();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
@@ -184,6 +186,60 @@ app.MapGet(
     )
     .WithName("GetOperationEvents")
     .WithTags("Operations");
+
+app.MapPost(
+        "/api/production-lots",
+        async (
+            CreateProductionLotRequest request,
+            ProductionLotApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            CreateProductionLotResult result = await service.CreateAsync(
+                new CreateProductionLotCommand(
+                    Code: request.Code,
+                    PlannedQuantity: request.PlannedQuantity
+                ),
+                cancellationToken
+            );
+
+            return Results.CreatedAtRoute(
+                routeName: "GetProductionLot",
+                routeValues: new { productionLotId = result.ProductionLotId },
+                value: CreateProductionLotCreatedResponse(result)
+            );
+        }
+    )
+    .WithName("CreateProductionLot")
+    .WithTags("Production");
+
+app.MapPost(
+        "/api/workpieces",
+        async (
+            CreateWorkpieceRequest request,
+            WorkpieceApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            CreateWorkpieceResult result = await service.CreateAsync(
+                new CreateWorkpieceCommand(
+                    ProductionLotId: request.ProductionLotId,
+                    SequenceNumber: request.SequenceNumber,
+                    Code: request.Code,
+                    MaterialCode: request.MaterialCode
+                ),
+                cancellationToken
+            );
+
+            return Results.CreatedAtRoute(
+                routeName: "GetWorkpiece",
+                routeValues: new { workpieceId = result.WorkpieceId },
+                value: CreateWorkpieceCreatedResponse(result)
+            );
+        }
+    )
+    .WithName("CreateWorkpiece")
+    .WithTags("Production");
 
 app.MapPost(
         "/api/operations",
@@ -508,7 +564,9 @@ app.MapPost(
 
             if (!isValidSeverity)
             {
-                throw new ArgumentException($"Invalid machine alarm severity '{request.Severity}'.");
+                throw new ArgumentException(
+                    $"Invalid machine alarm severity '{request.Severity}'."
+                );
             }
 
             FaultMachineOperationCommand command = new(
@@ -656,11 +714,7 @@ app.MapGet(
 
 app.MapGet(
         "/api/machines/{machineId}/live-snapshot",
-        async (
-            string machineId,
-            ILiveSnapshotQuery query,
-            CancellationToken cancellationToken
-        ) =>
+        async (string machineId, ILiveSnapshotQuery query, CancellationToken cancellationToken) =>
         {
             LiveSnapshotResult result = await query.GetByMachineIdAsync(
                 machineId,
@@ -1084,6 +1138,30 @@ static WorkpieceDetailsResponse CreateWorkpieceDetailsResponse(WorkpieceDetailsR
     );
 }
 
+static CreateProductionLotResponse CreateProductionLotCreatedResponse(
+    CreateProductionLotResult result
+)
+{
+    return new CreateProductionLotResponse(
+        ProductionLotId: result.ProductionLotId,
+        Code: result.Code,
+        PlannedQuantity: result.PlannedQuantity,
+        Status: result.Status.ToString()
+    );
+}
+
+static CreateWorkpieceResponse CreateWorkpieceCreatedResponse(CreateWorkpieceResult result)
+{
+    return new CreateWorkpieceResponse(
+        WorkpieceId: result.WorkpieceId,
+        ProductionLotId: result.ProductionLotId,
+        SequenceNumber: result.SequenceNumber,
+        Code: result.Code,
+        MaterialCode: result.MaterialCode,
+        Status: result.Status.ToString()
+    );
+}
+
 static ProductionLotDetailsResponse CreateProductionLotDetailsResponse(
     ProductionLotDetailsResult result
 )
@@ -1213,8 +1291,8 @@ static LiveSnapshotResponse CreateLiveSnapshotResponse(LiveSnapshotResult result
                 CurrentPhase: result.CurrentOperation.CurrentPhase,
                 StartedAt: result.CurrentOperation.StartedAt
             ),
-        ActiveAlarms: result.ActiveAlarms
-            .Select(alarm => new LiveSnapshotAlarmResponse(
+        ActiveAlarms: result
+            .ActiveAlarms.Select(alarm => new LiveSnapshotAlarmResponse(
                 Id: alarm.Id,
                 Code: alarm.Code,
                 Severity: alarm.Severity.ToString(),

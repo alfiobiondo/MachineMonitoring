@@ -1,1 +1,36 @@
-<p>live-progress-card works!</p>
+<article class="progress-card">
+  <header class="progress-card__header">
+    <div>
+      <p class="progress-card__title">{{ title() }}</p>
+      <h2 class="progress-card__label">{{ label() }}</h2>
+    </div>
+
+    <span class="progress-card__status">
+      {{ status() }}
+    </span>
+  </header>
+
+  <div class="progress-card__value">
+    <strong>{{ normalizedProgress() }}%</strong>
+  </div>
+
+  <div
+    class="progress-card__track"
+    role="progressbar"
+    [attr.aria-label]="title() + ': ' + label()"
+    [attr.aria-valuenow]="normalizedProgress()"
+    aria-valuemin="0"
+    aria-valuemax="100"
+  >
+    <div
+      class="progress-card__bar"
+      [style.width.%]="normalizedProgress()"
+    ></div>
+  </div>
+
+  @if (details(); as detailText) {
+    <p class="progress-card__details">
+      {{ detailText }}
+    </p>
+  }
+</article>

@@ -1,0 +1,66 @@
+:host {
+  display: block;
+}
+
+.progress-card {
+  padding: 1.5rem;
+  border: 1px solid #d9dee7;
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 8%);
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  &__title {
+    margin: 0 0 0.25rem;
+    color: #667085;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &__label {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  &__status {
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    background: #eef2f6;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  &__value {
+    margin-top: 1.5rem;
+    font-size: 2rem;
+  }
+
+  &__track {
+    height: 0.75rem;
+    margin-top: 0.75rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e9edf3;
+  }
+
+  &__bar {
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+    transition: width 200ms ease;
+  }
+
+  &__details {
+    margin: 0.75rem 0 0;
+    color: #667085;
+    font-size: 0.875rem;
+  }
+}
