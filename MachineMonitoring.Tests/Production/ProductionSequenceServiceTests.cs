@@ -132,6 +132,39 @@ public sealed class ProductionSequenceServiceTests
     }
 
     [Fact]
+    public async Task UpdateProgressAsync_WhenProgressRegresses_ThrowsAndDoesNotPublishNotification()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+        await _operationService.UpdateProgressAsync(
+            new UpdateMachineOperationProgressCommand(operation.Id, 35, "Laser cutting"),
+            CancellationToken.None
+        );
+
+        _notificationPublisher.ClearPublished();
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _operationService.UpdateProgressAsync(
+                new UpdateMachineOperationProgressCommand(operation.Id, 20, "Backtracking"),
+                CancellationToken.None
+            )
+        );
+
+        Assert.True(_operationRepository.TryGetValue(operation.Id, out MachineOperation? stored));
+        Assert.NotNull(stored);
+        Assert.Equal(35, stored.ProgressPercentage);
+        Assert.Equal("Laser cutting", stored.CurrentPhase);
+        Assert.Empty(_notificationPublisher.Published);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    [Fact]
     public async Task FaultAsync_PublishesAlarmStatusRuntimeAndEventNotifications()
     {
         (_, Workpiece workpiece) = await SeedHierarchyAsync();
