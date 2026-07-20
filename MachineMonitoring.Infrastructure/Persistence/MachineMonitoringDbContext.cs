@@ -573,6 +573,12 @@ public sealed class MachineMonitoringDbContext : DbContext
 
             entity.Property(item => item.OccurredAt).HasColumnName("occurred_at").IsRequired();
             entity.Property(item => item.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(item => item.ProcessedAt).HasColumnName("processed_at");
+            entity.Property(item => item.Attempts).HasColumnName("attempts").HasDefaultValue(0);
+            entity
+                .Property(item => item.LastError)
+                .HasColumnName("last_error")
+                .HasMaxLength(1000);
 
             entity.HasIndex(item => item.CreatedAt);
         });
