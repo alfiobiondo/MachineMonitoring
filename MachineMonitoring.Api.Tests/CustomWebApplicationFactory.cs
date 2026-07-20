@@ -54,7 +54,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton(MachineRuntimeStateRepository);
             services.AddSingleton(MachineProvider);
             services.AddSingleton(ProductionCatalog);
-            services.AddSingleton<FakeProductionTransactionManager>();
+            services.AddScoped<FakeProductionTransactionManager>();
 
             services.AddSingleton<IMachineOperationRepository>(serviceProvider =>
                 serviceProvider.GetRequiredService<TestMachineOperationRepository>()
@@ -100,7 +100,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 serviceProvider.GetRequiredService<TestProductionCatalog>()
             );
 
-            services.AddSingleton<IProductionTransactionManager>(serviceProvider =>
+            services.AddScoped<IProductionTransactionManager>(serviceProvider =>
                 serviceProvider.GetRequiredService<FakeProductionTransactionManager>()
             );
         });

@@ -132,6 +132,39 @@ public sealed class ProductionSequenceServiceTests
     }
 
     [Fact]
+    public async Task UpdateProgressAsync_WhenProgressRegresses_ThrowsAndDoesNotPublishNotification()
+    {
+        (_, Workpiece workpiece) = await SeedHierarchyAsync();
+        MachineOperation operation = CreateQueuedOperation(workpiece.Id, 1);
+        SeedOperation(operation);
+
+        await _operationService.StartAsync(
+            new StartMachineOperationCommand(operation.Id, "Preparing laser"),
+            CancellationToken.None
+        );
+        await _operationService.UpdateProgressAsync(
+            new UpdateMachineOperationProgressCommand(operation.Id, 35, "Laser cutting"),
+            CancellationToken.None
+        );
+
+        _notificationPublisher.ClearPublished();
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _operationService.UpdateProgressAsync(
+                new UpdateMachineOperationProgressCommand(operation.Id, 20, "Backtracking"),
+                CancellationToken.None
+            )
+        );
+
+        Assert.True(_operationRepository.TryGetValue(operation.Id, out MachineOperation? stored));
+        Assert.NotNull(stored);
+        Assert.Equal(35, stored.ProgressPercentage);
+        Assert.Equal("Laser cutting", stored.CurrentPhase);
+        Assert.Empty(_notificationPublisher.Published);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    [Fact]
     public async Task FaultAsync_PublishesAlarmStatusRuntimeAndEventNotifications()
     {
         (_, Workpiece workpiece) = await SeedHierarchyAsync();
@@ -821,10 +854,10 @@ public sealed class ProductionSequenceServiceTests
 
     private sealed class BufferedTestProductionTransactionManager : IProductionTransactionManager
     {
-        private readonly IBufferedProductionNotificationPublisher _notificationPublisher;
+        private readonly BufferedRecordingNotificationPublisher _notificationPublisher;
 
         public BufferedTestProductionTransactionManager(
-            IBufferedProductionNotificationPublisher notificationPublisher
+            BufferedRecordingNotificationPublisher notificationPublisher
         )
         {
             _notificationPublisher = notificationPublisher;
@@ -846,18 +879,17 @@ public sealed class ProductionSequenceServiceTests
             try
             {
                 await operation(cancellationToken);
-                await _notificationPublisher.FlushAsync(cancellationToken);
+                _notificationPublisher.Published.AddRange(_notificationPublisher.GetPending());
             }
-            catch
+            finally
             {
-                _notificationPublisher.Reset();
-                throw;
+                _notificationPublisher.Clear();
             }
         }
     }
 
     private sealed class BufferedRecordingNotificationPublisher
-        : IBufferedProductionNotificationPublisher
+        : IProductionNotificationCollector
     {
         public List<ProductionNotification> Pending { get; } = [];
 
@@ -872,14 +904,12 @@ public sealed class ProductionSequenceServiceTests
             return Task.CompletedTask;
         }
 
-        public Task FlushAsync(CancellationToken cancellationToken)
+        public IReadOnlyCollection<ProductionNotification> GetPending()
         {
-            Published.AddRange(Pending);
-            Pending.Clear();
-            return Task.CompletedTask;
+            return Pending.ToArray();
         }
 
-        public void Reset()
+        public void Clear()
         {
             Pending.Clear();
         }

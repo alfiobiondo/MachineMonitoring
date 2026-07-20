@@ -312,6 +312,47 @@ public sealed class OperationTransitionEndpointTests
     }
 
     [Fact]
+    public async Task UpdateProgress_WhenProgressRegresses_ReturnsUnprocessableEntityAndDoesNotModifyOperation()
+    {
+        MachineOperation operation = CreateRunningOperation();
+        operation.UpdateProgress(progressPercentage: 35, currentPhase: "Laser cutting");
+
+        SeedHierarchy(operation.WorkpieceId);
+        _factory.MachineOperationRepository.Seed(operation);
+
+        UpdateMachineOperationProgressRequest request = new(
+            ProgressPercentage: 20,
+            CurrentPhase: "Backtracking"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync(
+            $"/api/operations/{operation.Id}/progress",
+            request
+        );
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, problemDetails.Status);
+        Assert.Equal("Business rule violation", problemDetails.Title);
+        Assert.Contains("cannot be reduced", problemDetails.Detail);
+        Assert.Contains("35%", problemDetails.Detail);
+        Assert.Contains("20%", problemDetails.Detail);
+
+        MachineOperation? storedOperation = await _factory.MachineOperationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(35, storedOperation.ProgressPercentage);
+        Assert.Equal("Laser cutting", storedOperation.CurrentPhase);
+        Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+    }
+
+    [Fact]
     public async Task CompleteOperation_WhenOperationIsRunning_CompletesOperation()
     {
         // Arrange

@@ -103,6 +103,13 @@ public sealed class MachineOperation
 
         ArgumentException.ThrowIfNullOrWhiteSpace(currentPhase);
 
+        if (progressPercentage < ProgressPercentage)
+        {
+            throw new BusinessRuleViolationException(
+                $"Operation {Id} progress cannot be reduced from {ProgressPercentage}% to {progressPercentage}%."
+            );
+        }
+
         ProgressPercentage = progressPercentage;
         CurrentPhase = currentPhase;
     }
