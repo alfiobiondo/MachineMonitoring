@@ -1,0 +1,50 @@
+<main class="live-page">
+  <header class="live-page__header">
+    <p class="live-page__eyebrow">Machine Monitoring</p>
+    <h1>Live</h1>
+    <p>Macchina richiesta: {{ machineId() }}</p>
+  </header>
+
+  @if (loading()) {
+    <section class="live-page__state">
+      <p>Caricamento dello stato Live…</p>
+    </section>
+  } @else if (errorMessage(); as error) {
+    <section class="live-page__state live-page__state--error">
+      <h2>Errore</h2>
+      <p>{{ error }}</p>
+    </section>
+  } @else if (snapshot(); as liveSnapshot) {
+    <section class="live-page__content">
+      <h2>{{ liveSnapshot.machine.name }}</h2>
+
+      <dl>
+        <div>
+          <dt>Stato macchina</dt>
+          <dd>{{ liveSnapshot.machine.status ?? 'Non inizializzato' }}</dd>
+        </div>
+
+        <div>
+          <dt>Versione runtime</dt>
+          <dd>{{ liveSnapshot.runtimeVersion ?? '—' }}</dd>
+        </div>
+
+        <div>
+          <dt>Snapshot</dt>
+          <dd>{{ liveSnapshot.snapshotAt }}</dd>
+        </div>
+      </dl>
+
+      @if (hasProductionContext()) {
+        <pre>{{ liveSnapshot | json }}</pre>
+      } @else {
+        <section class="live-page__empty">
+          <h2>Nessuna lavorazione corrente</h2>
+          <p>
+            La macchina non ha un lotto, un pezzo e una lavorazione correnti.
+          </p>
+        </section>
+      }
+    </section>
+  }
+</main>

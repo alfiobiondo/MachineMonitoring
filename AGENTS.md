@@ -242,6 +242,55 @@ Configurazione di esempio già usata:
 - diagnostica non disponibile per `M-003`;
 - riepilogo degli stati calcolato dall'applicazione.
 
+### Frontend Angular
+
+Il progetto frontend è `MachineMonitoring.Web`.
+
+Stato attuale e convenzioni da preservare:
+
+- Angular 22;
+- componenti standalone;
+- TypeScript strict;
+- routing lazy tramite `loadComponent`;
+- SSR e hydration;
+- SCSS;
+- stato locale e di feature basato su Signals;
+- RxJS usato per flussi asincroni e integrazione con `HttpClient` e, in futuro,
+  SignalR.
+
+Struttura frontend:
+
+- `src/app/pages`: componenti associati direttamente alle route;
+- `src/app/features`: logica, API client, modelli, stato e componenti
+  specifici di una feature;
+- `src/app/shared`: UI e utilità generiche riutilizzabili tra più feature;
+- `src/app/core`: infrastruttura e servizi globali applicativi.
+
+Direzioni di dipendenza consentite:
+
+- `pages` può dipendere da `features`, `shared` e `core`;
+- `features` può dipendere da `shared` e `core`;
+- `shared` non deve dipendere da `pages` o `features`;
+- `core` non deve dipendere da `pages` o `features`.
+
+Convenzioni della feature Live:
+
+- usa `GET /api/machines/{machineId}/live-snapshot`;
+- mostra tre livelli di avanzamento: lotto, pezzo e operazione;
+- usa SSR per lo snapshot iniziale;
+- usa hydration per riutilizzare HTML e risposta iniziale;
+- SignalR verrà introdotto successivamente e non deve essere eseguito durante
+  SSR.
+
+Principi pratici:
+
+- mantenere separati pagina, stato, API e componenti;
+- non spostare prematuramente componenti specifici dentro `shared`;
+- non duplicare nel frontend calcoli già prodotti dal backend;
+- lo snapshot HTTP resta la fonte autorevole anche quando verrà aggiunto
+  SignalR;
+- evitare refactor o astrazioni speculative.
+
 ### Test
 
 Sono presenti o previsti test con xUnit.
