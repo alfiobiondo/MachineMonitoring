@@ -3,7 +3,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 
 import { LiveSnapshotApi } from '../api/live-snapshot.api';
-import { LiveSnapshot } from '../models/live-snapshot.model';
+import { LiveAlarm, LiveSnapshot } from '../models/live-snapshot.model';
 
 @Injectable()
 export class LivePageStore {
@@ -19,6 +19,19 @@ export class LivePageStore {
   readonly snapshot = this.snapshotState.asReadonly();
   readonly loading = this.loadingState.asReadonly();
   readonly errorMessage = this.errorMessageState.asReadonly();
+  readonly activeAlarms = computed<readonly LiveAlarm[]>(
+    () => this.snapshotState()?.activeAlarms ?? [],
+  );
+  readonly activeAlarmCount = computed(() => this.activeAlarms().length);
+  readonly blockingAlarms = computed(() =>
+    this.activeAlarms().filter((alarm) => alarm.isBlocking),
+  );
+  readonly blockingAlarmCount = computed(() => this.blockingAlarms().length);
+  readonly hasActiveAlarms = computed(() => this.activeAlarmCount() > 0);
+  readonly hasBlockingAlarms = computed(() => this.blockingAlarmCount() > 0);
+  readonly machineStatusLabel = computed(
+    () => this.snapshotState()?.machine.status ?? 'Non inizializzato',
+  );
 
   readonly hasProductionContext = computed(() => {
     const snapshot = this.snapshotState();

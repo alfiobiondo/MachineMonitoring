@@ -170,4 +170,56 @@ describe('LivePageStore', () => {
 
     expect(api.getByMachineId).toHaveBeenCalledTimes(2);
   });
+
+  it('should expose active alarms and blocking alarm counters', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'alarm-1',
+            code: 'AL-001',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Cooling pressure is low.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T11:58:00Z',
+          },
+          {
+            id: 'alarm-2',
+            code: 'AL-002',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door interlock is open.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T11:59:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('machine-1');
+
+    expect(store.hasActiveAlarms()).toBe(true);
+    expect(store.activeAlarmCount()).toBe(2);
+    expect(store.hasBlockingAlarms()).toBe(true);
+    expect(store.blockingAlarmCount()).toBe(1);
+    expect(store.machineStatusLabel()).toBe('Running');
+  });
+
+  it('should expose a fallback machine status label when runtime status is missing', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        machine: {
+          ...snapshot.machine,
+          status: null,
+        },
+      }),
+    );
+
+    store.load('machine-1');
+
+    expect(store.machineStatusLabel()).toBe('Non inizializzato');
+  });
 });

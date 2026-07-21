@@ -16,24 +16,87 @@
     </section>
   } @else if (store.snapshot(); as liveSnapshot) {
     <section class="live-page__content">
-      <h2>{{ liveSnapshot.machine.name }}</h2>
+      <section [class]="runtimePanelClass()">
+        <div class="live-page__runtime-header">
+          <div>
+            <p class="live-page__section-label">Macchina</p>
+            <h2>{{ liveSnapshot.machine.name }}</h2>
+            <p class="live-page__runtime-headline">{{ runtimeHeadline() }}</p>
+          </div>
 
-      <dl>
-        <div>
-          <dt>Stato macchina</dt>
-          <dd>{{ liveSnapshot.machine.status ?? 'Non inizializzato' }}</dd>
+          <span class="live-page__status-chip">
+            {{ store.machineStatusLabel() }}
+          </span>
         </div>
 
-        <div>
-          <dt>Versione runtime</dt>
-          <dd>{{ liveSnapshot.runtimeVersion ?? '—' }}</dd>
+        <p class="live-page__runtime-summary">{{ runtimeSummary() }}</p>
+
+        <dl class="live-page__runtime-details">
+          <div>
+            <dt>Machine ID</dt>
+            <dd>{{ liveSnapshot.machine.id }}</dd>
+          </div>
+
+          <div>
+            <dt>Versione runtime</dt>
+            <dd>{{ liveSnapshot.runtimeVersion ?? '—' }}</dd>
+          </div>
+
+          <div>
+            <dt>Ultimo cambio stato</dt>
+            <dd>
+              {{ liveSnapshot.machine.lastChangedAt ? (liveSnapshot.machine.lastChangedAt | date: 'short') : '—' }}
+            </dd>
+          </div>
+
+          <div>
+            <dt>Snapshot</dt>
+            <dd>{{ liveSnapshot.snapshotAt | date: 'short' }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="live-page__alarms">
+        <div class="live-page__alarms-header">
+          <div>
+            <p class="live-page__section-label">Allarmi attivi</p>
+            <h3>{{ alarmSummary() }}</h3>
+          </div>
+
+          @if (store.hasBlockingAlarms()) {
+            <span class="live-page__alarm-chip live-page__alarm-chip--blocking">
+              Bloccante
+            </span>
+          } @else if (store.hasActiveAlarms()) {
+            <span class="live-page__alarm-chip">
+              Attivi
+            </span>
+          }
         </div>
 
-        <div>
-          <dt>Snapshot</dt>
-          <dd>{{ liveSnapshot.snapshotAt }}</dd>
-        </div>
-      </dl>
+        @if (store.hasActiveAlarms()) {
+          <ul class="live-page__alarm-list">
+            @for (alarm of store.activeAlarms(); track alarm.id) {
+              <li
+                class="live-page__alarm-item"
+                [class.live-page__alarm-item--blocking]="alarm.isBlocking"
+              >
+                <div class="live-page__alarm-meta">
+                  <strong>{{ alarm.code }}</strong>
+                  <span>{{ alarm.severity }} · {{ alarm.status }}</span>
+                </div>
+
+                <p>{{ alarm.message }}</p>
+                <small>Raised {{ alarm.raisedAt | date: 'short' }}</small>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="live-page__alarm-empty">
+            Nessun allarme attivo per questa macchina.
+          </p>
+        }
+      </section>
 
       @if (store.hasProductionContext()) {
         <div class="live-page__progress-grid">
