@@ -1,21 +1,21 @@
-export interface LiveSnapshot {
-  machine: LiveMachine;
+export interface MachineSnapshot {
+  machine: MachineSnapshotMachine;
   runtimeVersion: number | null;
-  productionLot: LiveProductionLot | null;
-  currentWorkpiece: LiveWorkpiece | null;
-  currentOperation: LiveOperation | null;
-  activeAlarms: readonly LiveAlarm[];
+  productionLot: MachineSnapshotProductionLot | null;
+  currentWorkpiece: MachineSnapshotWorkpiece | null;
+  currentOperation: MachineSnapshotOperation | null;
+  activeAlarms: readonly MachineSnapshotAlarm[];
   snapshotAt: string;
 }
 
-export interface LiveMachine {
+export interface MachineSnapshotMachine {
   id: string;
   name: string;
   status: string | null;
   lastChangedAt: string | null;
 }
 
-export interface LiveProductionLot {
+export interface MachineSnapshotProductionLot {
   id: string;
   code: string;
   status: string;
@@ -24,7 +24,7 @@ export interface LiveProductionLot {
   totalOperations: number;
 }
 
-export interface LiveWorkpiece {
+export interface MachineSnapshotWorkpiece {
   id: string;
   code: string;
   status: string;
@@ -36,7 +36,7 @@ export interface LiveWorkpiece {
   totalOperations: number;
 }
 
-export interface LiveOperation {
+export interface MachineSnapshotOperation {
   id: string;
   type: string;
   status: string;
@@ -48,7 +48,7 @@ export interface LiveOperation {
   startedAt: string | null;
 }
 
-export interface LiveAlarm {
+export interface MachineSnapshotAlarm {
   id: string;
   code: string;
   severity: string;

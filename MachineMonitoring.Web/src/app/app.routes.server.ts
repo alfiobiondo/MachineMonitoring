@@ -2,7 +2,19 @@ import { RenderMode, ServerRoute } from '@angular/ssr';
 
 export const serverRoutes: ServerRoute[] = [
   {
-    path: 'live/:machineId',
+    path: 'machines/:machineId/live',
+    renderMode: RenderMode.Server,
+  },
+  {
+    path: 'machines/:machineId/programming',
+    renderMode: RenderMode.Server,
+  },
+  {
+    path: 'machines/:machineId/technology-parameters',
+    renderMode: RenderMode.Server,
+  },
+  {
+    path: 'machines/:machineId',
     renderMode: RenderMode.Server,
   },
   {

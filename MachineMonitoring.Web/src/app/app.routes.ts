@@ -2,19 +2,47 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
   {
-    path: 'live/:machineId',
+    path: 'machines/:machineId',
     loadComponent: () =>
-      import('./pages/live-page/live-page').then(
-        (module) => module.LivePage,
+      import('./pages/machine-shell/machine-shell').then(
+        (module) => module.MachineShell,
       ),
+    children: [
+      {
+        path: 'live',
+        loadComponent: () =>
+          import('./pages/live-page/live-page').then(
+            (module) => module.LivePage,
+          ),
+      },
+      {
+        path: 'programming',
+        loadComponent: () =>
+          import('./pages/programming-page/programming-page').then(
+            (module) => module.ProgrammingPage,
+          ),
+      },
+      {
+        path: 'technology-parameters',
+        loadComponent: () =>
+          import(
+            './pages/technology-parameters-page/technology-parameters-page'
+          ).then((module) => module.TechnologyParametersPage),
+      },
+      {
+        path: '',
+        pathMatch: 'full',
+        redirectTo: 'live',
+      },
+    ],
   },
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'live/machine-1',
+    redirectTo: 'machines/M-001/live',
   },
   {
     path: '**',
-    redirectTo: 'live/machine-1',
+    redirectTo: 'machines/M-001/live',
   },
 ];

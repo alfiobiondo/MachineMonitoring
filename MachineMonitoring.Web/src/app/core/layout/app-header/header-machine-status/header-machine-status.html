@@ -1,0 +1,17 @@
+<section class="machine-status" aria-label="Stato macchina">
+  @if (context(); as currentContext) {
+    <div class="machine-status__body">
+      <span class="machine-status__eyebrow">Macchina</span>
+      <strong class="machine-status__name">{{ currentContext.machine.name }}</strong>
+      <span class="machine-status__meta">{{ currentContext.machine.id }}</span>
+    </div>
+    <span class="machine-status__badge">{{ currentContext.machine.status ?? 'Non inizializzata' }}</span>
+  } @else {
+    <div class="machine-status__body">
+      <span class="machine-status__eyebrow">Macchina</span>
+      <strong class="machine-status__name">Nessuna macchina selezionata</strong>
+      <span class="machine-status__meta">Apri una vista Live</span>
+    </div>
+    <span class="machine-status__badge machine-status__badge--muted">In attesa</span>
+  }
+</section>

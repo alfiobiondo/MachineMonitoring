@@ -1,0 +1,12 @@
+<div class="machine-shell">
+  <app-header
+    [context]="headerContext()"
+    [refreshing]="snapshotStore.refreshing()"
+  />
+
+  <main class="machine-shell__main">
+    <router-outlet />
+  </main>
+
+  <app-sidebar [machineId]="machineId()" />
+</div>

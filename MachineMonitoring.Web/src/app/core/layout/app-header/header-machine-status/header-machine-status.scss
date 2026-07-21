@@ -1,0 +1,53 @@
+.machine-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgb(12 74 110 / 0.12);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 0.75rem 1.75rem rgb(15 23 42 / 0.06);
+
+  &__body {
+    display: grid;
+    min-width: 0;
+    gap: 0.25rem;
+  }
+
+  &__eyebrow,
+  &__meta {
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  &__name {
+    overflow: hidden;
+    color: #17202a;
+    font-size: 1.2rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__badge {
+    justify-self: end;
+    align-self: start;
+    padding: 0.24rem 0.55rem;
+    border-radius: 999px;
+    color: #0f766e;
+    background: rgb(15 118 110 / 0.12);
+    font-size: 0.78rem;
+    font-weight: 800;
+
+    &--muted {
+      color: #64748b;
+      background: rgb(100 116 139 / 0.12);
+    }
+  }
+}

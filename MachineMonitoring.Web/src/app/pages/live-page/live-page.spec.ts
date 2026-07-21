@@ -2,16 +2,17 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 
-import { LiveSnapshot } from '../../features/live/models/live-snapshot.model';
-import { LivePageStore } from '../../features/live/state/live-page.store';
+import { MachineSnapshot } from '../../features/machine-monitoring/models/machine-snapshot.model';
+import { MachineSnapshotStore } from '../../features/machine-monitoring/state/machine-snapshot.store';
 import { LivePage } from './live-page';
 
 describe('LivePage', () => {
   let fixture: ComponentFixture<LivePage>;
   let load: ReturnType<typeof vi.fn>;
   let destroy: ReturnType<typeof vi.fn>;
+  let refreshingState: ReturnType<typeof signal<boolean>>;
 
-  const liveSnapshot: LiveSnapshot = {
+  const liveSnapshot: MachineSnapshot = {
     machine: {
       id: 'M-001',
       name: 'Laser M-001',
@@ -63,63 +64,75 @@ describe('LivePage', () => {
     snapshotAt: '2026-07-21T08:32:00Z',
   };
 
-  beforeEach(async () => {
+  async function createComponent() {
     load = vi.fn();
     destroy = vi.fn();
 
-    const snapshot = signal<LiveSnapshot | null>(liveSnapshot);
+    const currentMachineId = signal('M-001');
+    const snapshot = signal<MachineSnapshot | null>(liveSnapshot);
     const loading = signal(false);
+    refreshingState = signal(false);
     const errorMessage = signal<string | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [LivePage],
-    })
-      .overrideComponent(LivePage, {
-        remove: {
-          providers: [LivePageStore],
+      providers: [
+        {
+          provide: MachineSnapshotStore,
+          useValue: {
+            load,
+            destroy,
+            currentMachineId: currentMachineId.asReadonly(),
+            snapshot: snapshot.asReadonly(),
+            loading: loading.asReadonly(),
+            refreshing: refreshingState.asReadonly(),
+            errorMessage: errorMessage.asReadonly(),
+            hasProductionContext: computed(() => true),
+          },
         },
-        add: {
-          providers: [
-            {
-              provide: LivePageStore,
-              useValue: {
-                load,
-                destroy,
-                snapshot,
-                loading,
-                errorMessage,
-                hasProductionContext: computed(() => true),
-                activeAlarms: computed(() => liveSnapshot.activeAlarms),
-                activeAlarmCount: computed(() => 1),
-                blockingAlarms: computed(() => liveSnapshot.activeAlarms),
-                blockingAlarmCount: computed(() => 1),
-                hasActiveAlarms: computed(() => true),
-                hasBlockingAlarms: computed(() => true),
-                machineStatusLabel: computed(() => 'Running'),
-              },
-            },
-          ],
-        },
-      })
-      .compileComponents();
+      ],
+    }).compileComponents();
 
     fixture = TestBed.createComponent(LivePage);
-    fixture.componentRef.setInput('machineId', 'M-001');
     fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await createComponent();
   });
 
-  it('should load the requested machine', () => {
-    expect(load).toHaveBeenCalledWith('M-001');
+  afterEach(() => {
+    fixture.destroy();
   });
 
-  it('should render runtime and blocking alarm information', () => {
+  it('should not start polling or load snapshots directly', () => {
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('should not destroy the shared machine snapshot store when the page is destroyed', () => {
+    fixture.destroy();
+
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it('should render the shared live production content', () => {
     const element: HTMLElement = fixture.nativeElement;
 
-    expect(element.textContent).toContain('Laser M-001');
-    expect(element.textContent).toContain('Macchina con allarme bloccante');
-    expect(element.textContent).toContain('Bloccante');
-    expect(element.textContent).toContain('AL-001');
-    expect(element.textContent).toContain('Safety door is open.');
+    expect(element.textContent).toContain('Macchina richiesta: M-001');
+    expect(element.textContent).toContain('Lotto');
+    expect(element.textContent).toContain('Pezzo');
+    expect(element.textContent).toContain('Operazione');
     expect(element.textContent).toContain('Running');
+  });
+
+  it('should keep the live cards visible while a silent refresh is running', () => {
+    refreshingState.set(true);
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+
+    expect(element.textContent).toContain('Lotto');
+    expect(element.textContent).toContain('Pezzo');
+    expect(element.textContent).toContain('Operazione');
   });
 });
