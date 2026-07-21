@@ -14,6 +14,7 @@ export class LivePageStore {
   private readonly errorMessageState = signal<string | null>(null);
 
   private activeRequest: Subscription | null = null;
+  private currentMachineId: string | null = null;
 
   readonly snapshot = this.snapshotState.asReadonly();
   readonly loading = this.loadingState.asReadonly();
@@ -29,38 +30,40 @@ export class LivePageStore {
     );
   });
 
-  load(machineId: string): void {
+  load(machineId: string, force = false): void {
+    const isSameMachine = this.currentMachineId === machineId;
+
+    if (!force && isSameMachine && (this.loadingState() || this.snapshotState() !== null)) {
+      return;
+    }
+
     this.activeRequest?.unsubscribe();
 
+    this.currentMachineId = machineId;
+    this.snapshotState.set(null);
     this.loadingState.set(true);
     this.errorMessageState.set(null);
 
-    this.activeRequest = this.liveSnapshotApi
-      .getByMachineId(machineId)
-      .subscribe({
-        next: (snapshot) => {
-          this.snapshotState.set(snapshot);
-          this.loadingState.set(false);
-        },
-        error: (error: HttpErrorResponse) => {
-          this.snapshotState.set(null);
-          this.errorMessageState.set(
-            this.getErrorMessage(error, machineId),
-          );
-          this.loadingState.set(false);
-        },
-      });
+    this.activeRequest = this.liveSnapshotApi.getByMachineId(machineId).subscribe({
+      next: (snapshot) => {
+        this.snapshotState.set(snapshot);
+        this.loadingState.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.snapshotState.set(null);
+        this.errorMessageState.set(this.getErrorMessage(error, machineId));
+        this.loadingState.set(false);
+      },
+    });
   }
 
   destroy(): void {
     this.activeRequest?.unsubscribe();
     this.activeRequest = null;
+    this.currentMachineId = null;
   }
 
-  private getErrorMessage(
-    error: HttpErrorResponse,
-    machineId: string,
-  ): string {
+  private getErrorMessage(error: HttpErrorResponse, machineId: string): string {
     if (error.status === 404) {
       return `Macchina "${machineId}" non trovata.`;
     }
