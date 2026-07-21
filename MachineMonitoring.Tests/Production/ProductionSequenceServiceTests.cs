@@ -285,6 +285,123 @@ public sealed class ProductionSequenceServiceTests
         Assert.Empty(_notificationPublisher.Pending);
     }
 
+    [Fact]
+    public async Task ResolveAsync_WhenMachineLevelAlarmClearsLastBlockingAlarm_PublishesRuntimeNotification()
+    {
+        DateTimeOffset raisedAt = DateTimeOffset.UtcNow;
+        MachineAlarm alarm = new(
+            id: Guid.NewGuid(),
+            machineId: "M-001",
+            machineOperationId: null,
+            code: "MACHINE-FAULT",
+            severity: MachineAlarmSeverity.Critical,
+            message: "Machine fault.",
+            raisedAt: raisedAt
+        );
+        MachineRuntimeState runtimeState = MachineRuntimeState.CreateAvailable(
+            alarm.MachineId,
+            raisedAt
+        );
+        runtimeState.Fault(
+            operationId: null,
+            alarmId: alarm.Id,
+            failureReason: alarm.Message,
+            changedAt: raisedAt
+        );
+        await _alarmRepository.AddAsync(alarm, CancellationToken.None);
+        await _runtimeStateRepository.AddAsync(runtimeState, CancellationToken.None);
+        _notificationPublisher.ClearPublished();
+
+        await _alarmService.ResolveAsync(
+            new ResolveMachineAlarmCommand(alarm.Id, "Fault cleared"),
+            CancellationToken.None
+        );
+
+        MachineAlarmResolvedNotification resolvedNotification = AssertSinglePublished<
+            MachineAlarmResolvedNotification
+        >();
+        MachineRuntimeStatusChangedNotification runtimeNotification = AssertSinglePublished<
+            MachineRuntimeStatusChangedNotification
+        >();
+        MachineRuntimeState? storedRuntimeState =
+            await _runtimeStateRepository.GetByMachineIdAsync(alarm.MachineId, CancellationToken.None);
+
+        Assert.Equal(alarm.Id, resolvedNotification.AlarmId);
+        Assert.Equal(alarm.MachineId, resolvedNotification.MachineId);
+
+        Assert.Equal(alarm.MachineId, runtimeNotification.MachineId);
+        Assert.Equal(MachineRuntimeStatus.Available, runtimeNotification.Status);
+        Assert.Null(runtimeNotification.CurrentOperationId);
+
+        Assert.NotNull(storedRuntimeState);
+        Assert.Equal(MachineRuntimeStatus.Available, storedRuntimeState.Status);
+        Assert.Null(storedRuntimeState.CurrentOperationId);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenAnotherBlockingMachineLevelAlarmRemains_DoesNotPublishRuntimeNotification()
+    {
+        DateTimeOffset raisedAt = DateTimeOffset.UtcNow;
+        MachineAlarm alarmToResolve = new(
+            id: Guid.NewGuid(),
+            machineId: "M-001",
+            machineOperationId: null,
+            code: "MACHINE-FAULT-1",
+            severity: MachineAlarmSeverity.Critical,
+            message: "First machine fault.",
+            raisedAt: raisedAt
+        );
+        MachineAlarm remainingBlockingAlarm = new(
+            id: Guid.NewGuid(),
+            machineId: "M-001",
+            machineOperationId: null,
+            code: "MACHINE-FAULT-2",
+            severity: MachineAlarmSeverity.Critical,
+            message: "Second machine fault.",
+            raisedAt: raisedAt.AddSeconds(1)
+        );
+        MachineRuntimeState runtimeState = MachineRuntimeState.CreateAvailable(
+            alarmToResolve.MachineId,
+            raisedAt
+        );
+        runtimeState.Fault(
+            operationId: null,
+            alarmId: alarmToResolve.Id,
+            failureReason: alarmToResolve.Message,
+            changedAt: raisedAt
+        );
+        await _alarmRepository.AddAsync(alarmToResolve, CancellationToken.None);
+        await _alarmRepository.AddAsync(remainingBlockingAlarm, CancellationToken.None);
+        await _runtimeStateRepository.AddAsync(runtimeState, CancellationToken.None);
+        _notificationPublisher.ClearPublished();
+
+        await _alarmService.ResolveAsync(
+            new ResolveMachineAlarmCommand(alarmToResolve.Id, "First fault cleared"),
+            CancellationToken.None
+        );
+
+        MachineAlarmResolvedNotification resolvedNotification = AssertSinglePublished<
+            MachineAlarmResolvedNotification
+        >();
+        MachineRuntimeState? storedRuntimeState =
+            await _runtimeStateRepository.GetByMachineIdAsync(
+                alarmToResolve.MachineId,
+                CancellationToken.None
+            );
+
+        Assert.Equal(alarmToResolve.Id, resolvedNotification.AlarmId);
+        Assert.DoesNotContain(
+            _notificationPublisher.Published,
+            notification => notification is MachineRuntimeStatusChangedNotification
+        );
+
+        Assert.NotNull(storedRuntimeState);
+        Assert.Equal(MachineRuntimeStatus.Faulted, storedRuntimeState.Status);
+        Assert.Equal(alarmToResolve.Id, storedRuntimeState.ActiveAlarmId);
+        Assert.Empty(_notificationPublisher.Pending);
+    }
+
     private TNotification AssertSinglePublished<TNotification>()
         where TNotification : ProductionNotification
     {

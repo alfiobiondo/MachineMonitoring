@@ -37,7 +37,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await context.Worker.StartAsync(CancellationToken.None);
         await controller.WaitForInvocationCountAsync(1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
 
         Assert.Equal(2, controller.CreatedInstanceIds.Count);
@@ -75,7 +75,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await controller.WaitForInvocationCountAsync(1);
         await AssertInvocationCountRemainsAsync(controller, 1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
 
         await context.StopWorkerAsync();
@@ -94,7 +94,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await controller.WaitForInvocationCountAsync(1);
         await AssertInvocationCountRemainsAsync(controller, 1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
 
         await context.StopWorkerAsync();
@@ -130,7 +130,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await controller.WaitForInvocationCountAsync(1);
         await AssertInvocationCountRemainsAsync(controller, 1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
 
         await context.StopWorkerAsync();
@@ -149,7 +149,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await controller.WaitForInvocationCountAsync(1);
         await AssertInvocationCountRemainsAsync(controller, 1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
 
         await context.StopWorkerAsync();
@@ -208,7 +208,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await context.Worker.StartAsync(CancellationToken.None);
         await controller.WaitForDisposedCountAsync(1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForDisposedCountAsync(2);
 
         Assert.Equal(2, controller.DisposedInstanceIds.Count);
@@ -230,11 +230,11 @@ public sealed class OutboxProcessingBackgroundServiceTests
         await controller.WaitForInvocationCountAsync(1);
         await AssertInvocationCountRemainsAsync(controller, 1);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(2);
         await AssertInvocationCountRemainsAsync(controller, 2);
 
-        context.TimeProvider.Advance(context.PollingInterval);
+        context.WakeUp();
         await controller.WaitForInvocationCountAsync(3);
 
         await context.StopWorkerAsync();
@@ -246,7 +246,7 @@ public sealed class OutboxProcessingBackgroundServiceTests
         int pollingIntervalSeconds = 5
     )
     {
-        FakeTimeProvider timeProvider = new(new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero));
+        OutboxWakeUpSignal wakeUpSignal = new();
         ServiceCollection services = new();
 
         services.AddScoped<IOutboxProcessor>(_ => new ScopedTestOutboxProcessor(controller));
@@ -262,14 +262,14 @@ public sealed class OutboxProcessingBackgroundServiceTests
                     PollingIntervalSeconds = pollingIntervalSeconds,
                 }
             ),
-            timeProvider,
+            wakeUpSignal,
             NullLogger<OutboxProcessingBackgroundService>.Instance
         );
 
         return new TestWorkerContext(
             serviceProvider,
             worker,
-            timeProvider,
+            wakeUpSignal,
             TimeSpan.FromSeconds(pollingIntervalSeconds)
         );
     }
@@ -291,13 +291,13 @@ public sealed class OutboxProcessingBackgroundServiceTests
         public TestWorkerContext(
             ServiceProvider serviceProvider,
             OutboxProcessingBackgroundService worker,
-            FakeTimeProvider timeProvider,
+            OutboxWakeUpSignal wakeUpSignal,
             TimeSpan pollingInterval
         )
         {
             ServiceProvider = serviceProvider;
             Worker = worker;
-            TimeProvider = timeProvider;
+            WakeUpSignal = wakeUpSignal;
             PollingInterval = pollingInterval;
         }
 
@@ -305,9 +305,11 @@ public sealed class OutboxProcessingBackgroundServiceTests
 
         public OutboxProcessingBackgroundService Worker { get; }
 
-        public FakeTimeProvider TimeProvider { get; }
+        public OutboxWakeUpSignal WakeUpSignal { get; }
 
         public TimeSpan PollingInterval { get; }
+
+        public void WakeUp() => WakeUpSignal.Notify();
 
         public Task StopWorkerAsync() => Worker.StopAsync(CancellationToken.None);
 

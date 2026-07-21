@@ -40,11 +40,35 @@
     align-self: start;
     padding: 0.24rem 0.55rem;
     border-radius: 999px;
-    color: #0f766e;
-    background: rgb(15 118 110 / 0.12);
     font-size: 0.78rem;
     font-weight: 800;
 
+    &--available {
+      color: #0f766e;
+      background: rgb(15 118 110 / 0.12);
+    }
+
+    &--running {
+      color: #1d4ed8;
+      background: rgb(29 78 216 / 0.12);
+    }
+
+    &--paused {
+      color: #a16207;
+      background: rgb(161 98 7 / 0.14);
+    }
+
+    &--faulted {
+      color: #b91c1c;
+      background: rgb(185 28 28 / 0.12);
+    }
+
+    &--maintenance {
+      color: #c2410c;
+      background: rgb(194 65 12 / 0.12);
+    }
+
+    &--offline,
     &--muted {
       color: #64748b;
       background: rgb(100 116 139 / 0.12);

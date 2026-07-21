@@ -10,19 +10,20 @@ public sealed class OutboxProcessingBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly int _batchSize;
     private readonly TimeSpan _pollingInterval;
-    private readonly TimeProvider _timeProvider;
     private readonly ILogger<OutboxProcessingBackgroundService> _logger;
+
+    private readonly OutboxWakeUpSignal _wakeUpSignal;
 
     public OutboxProcessingBackgroundService(
         IServiceScopeFactory scopeFactory,
         IOptions<OutboxProcessingOptions> options,
-        TimeProvider timeProvider,
+        OutboxWakeUpSignal wakeUpSignal,
         ILogger<OutboxProcessingBackgroundService> logger
     )
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(wakeUpSignal);
         ArgumentNullException.ThrowIfNull(logger);
 
         OutboxProcessingOptions configuredOptions = options.Value;
@@ -30,7 +31,7 @@ public sealed class OutboxProcessingBackgroundService : BackgroundService
         _scopeFactory = scopeFactory;
         _batchSize = configuredOptions.BatchSize;
         _pollingInterval = TimeSpan.FromSeconds(configuredOptions.PollingIntervalSeconds);
-        _timeProvider = timeProvider;
+        _wakeUpSignal = wakeUpSignal;
         _logger = logger;
     }
 
@@ -76,8 +77,7 @@ public sealed class OutboxProcessingBackgroundService : BackgroundService
                         );
                     }
 
-                    shouldDelay =
-                        result.AttemptedCount != _batchSize || result.FailedCount > 0;
+                    shouldDelay = result.AttemptedCount != _batchSize || result.FailedCount > 0;
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -85,10 +85,7 @@ public sealed class OutboxProcessingBackgroundService : BackgroundService
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogError(
-                        exception,
-                        "Unexpected error during outbox processing."
-                    );
+                    _logger.LogError(exception, "Unexpected error during outbox processing.");
                 }
 
                 if (!shouldDelay)
@@ -99,11 +96,21 @@ public sealed class OutboxProcessingBackgroundService : BackgroundService
                 try
                 {
                     _logger.LogDebug(
-                        "Waiting {PollingIntervalSeconds} seconds before the next outbox polling cycle.",
+                        "Waiting up to {PollingIntervalSeconds} seconds before the next outbox processing cycle.",
                         _pollingInterval.TotalSeconds
                     );
 
-                    await Task.Delay(_pollingInterval, _timeProvider, stoppingToken);
+                    bool wasSignaled = await _wakeUpSignal.WaitAsync(
+                        _pollingInterval,
+                        stoppingToken
+                    );
+
+                    if (wasSignaled)
+                    {
+                        _logger.LogDebug(
+                            "Outbox worker awakened because new messages may be available."
+                        );
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

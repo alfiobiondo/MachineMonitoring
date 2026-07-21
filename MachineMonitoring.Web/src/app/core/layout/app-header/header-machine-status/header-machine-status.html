@@ -5,7 +5,18 @@
       <strong class="machine-status__name">{{ currentContext.machine.name }}</strong>
       <span class="machine-status__meta">{{ currentContext.machine.id }}</span>
     </div>
-    <span class="machine-status__badge">{{ currentContext.machine.status ?? 'Non inizializzata' }}</span>
+    <span
+      class="machine-status__badge"
+      [class.machine-status__badge--available]="statusTone() === 'available'"
+      [class.machine-status__badge--running]="statusTone() === 'running'"
+      [class.machine-status__badge--paused]="statusTone() === 'paused'"
+      [class.machine-status__badge--faulted]="statusTone() === 'faulted'"
+      [class.machine-status__badge--maintenance]="statusTone() === 'maintenance'"
+      [class.machine-status__badge--offline]="statusTone() === 'offline'"
+      [class.machine-status__badge--muted]="statusTone() === 'muted'"
+    >
+      {{ currentContext.machine.status ?? 'Non inizializzata' }}
+    </span>
   } @else {
     <div class="machine-status__body">
       <span class="machine-status__eyebrow">Macchina</span>

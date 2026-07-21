@@ -3,9 +3,11 @@ using MachineMonitoring.Api.Catalogs;
 using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
 using MachineMonitoring.Api.HealthChecks;
+using MachineMonitoring.Api.Hubs;
 using MachineMonitoring.Api.Machines;
 using MachineMonitoring.Api.Operations;
 using MachineMonitoring.Api.Production;
+using MachineMonitoring.Api.Realtime;
 using MachineMonitoring.Application;
 using MachineMonitoring.Application.Common;
 using MachineMonitoring.Application.Exceptions;
@@ -17,6 +19,7 @@ using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
 using MachineMonitoring.Infrastructure;
 using MachineMonitoring.Infrastructure.Configuration;
+using MachineMonitoring.Infrastructure.Persistence.Outbox;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
@@ -45,9 +48,30 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddSignalR();
+
+builder.Services.AddScoped<IOutboxMessageDispatcher, SignalROutboxMessageDispatcher>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "MachineMonitoringWeb",
+        policy =>
+        {
+            policy
+                .WithOrigins("http://localhost:4200")
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+    );
+});
+
 WebApplication app = builder.Build();
 
 app.UseExceptionHandler();
+
+app.UseCors("MachineMonitoringWeb");
 
 if (app.Environment.IsDevelopment())
 {
@@ -74,6 +98,8 @@ app.MapHealthChecks(
         ResponseWriter = HealthCheckResponseWriter.WriteAsync,
     }
 );
+
+app.MapHub<MachineMonitoringHub>("/hubs/machine-monitoring");
 
 app.MapGet(
         "/api/operations",

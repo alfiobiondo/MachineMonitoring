@@ -11,7 +11,7 @@ namespace MachineMonitoring.Tests.Outbox;
 public sealed class OutboxProcessingOptionsAndDependencyInjectionTests
 {
     [Fact]
-    public void ProductionInfrastructureDoesNotRegisterOutboxWorker()
+    public void ProductionInfrastructureRegistersOutboxProcessingButNotDispatcher()
     {
         ServiceCollection services = [];
         IConfiguration configuration = new ConfigurationBuilder()
@@ -26,7 +26,7 @@ public sealed class OutboxProcessingOptionsAndDependencyInjectionTests
 
         services.AddMachineMonitoringInfrastructure(configuration);
 
-        Assert.DoesNotContain(
+        Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IOutboxProcessor)
         );
@@ -34,11 +34,15 @@ public sealed class OutboxProcessingOptionsAndDependencyInjectionTests
             services,
             descriptor => descriptor.ServiceType == typeof(IOutboxMessageDispatcher)
         );
-        Assert.DoesNotContain(
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(OutboxWakeUpSignal)
+        );
+        Assert.Contains(
             services,
             descriptor => descriptor.ImplementationType == typeof(OutboxProcessingBackgroundService)
         );
-        Assert.DoesNotContain(
+        Assert.Contains(
             services,
             descriptor =>
                 descriptor.ServiceType == typeof(IHostedService)
