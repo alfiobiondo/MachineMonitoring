@@ -20,9 +20,13 @@ scripts/
 |   |-- create_live_demo.py
 |   |-- create_empty_machine.py
 |   |-- create_fault_scenario.py
-|   `-- recover_fault_scenario.py
+|   |-- pause_current_operation.py
+|   |-- recover_fault_scenario.py
+|   `-- resume_current_operation.py
+|-- pause-machine.sh
+|-- recover-machine.sh
 |-- run-live-demo.sh
-`-- recover-machine.sh
+`-- resume-machine.sh
 ```
 
 `common/api_client.py` contiene il client HTTP comune: `GET`, `POST`, JSON, risposte senza body e `application/problem+json`.
@@ -174,6 +178,44 @@ In modalita' interattiva lo script chiede se risolvere l'allarme e se eseguire `
 
 In modalita' `--non-interactive` serve `--resolve`; se piu' allarmi sono candidati, lo script termina con un errore chiaro invece di scegliere automaticamente.
 
+## pause_current_operation
+
+Mette in pausa la current operation della macchina usando:
+
+```text
+GET  /api/machines/{machineId}/live-snapshot
+POST /api/operations/{operationId}/pause
+GET  /api/machines/{machineId}/live-snapshot
+```
+
+Esempi:
+
+```bash
+./scripts/pause-machine.sh --machine-id M-001 --non-interactive
+python3 scripts/scenarios/pause_current_operation.py --machine-id M-001
+```
+
+Lo script richiede una current operation `Running` e una macchina `Running`. Dopo il pause verifica che machine e operation siano `Paused` e che il progress non sia stato azzerato.
+
+## resume_current_operation
+
+Riprende la current operation in pausa usando:
+
+```text
+GET  /api/machines/{machineId}/live-snapshot
+POST /api/operations/{operationId}/resume
+GET  /api/machines/{machineId}/live-snapshot
+```
+
+Esempi:
+
+```bash
+./scripts/resume-machine.sh --machine-id M-001 --non-interactive
+python3 scripts/scenarios/resume_current_operation.py --machine-id M-001
+```
+
+Lo script richiede una current operation `Paused`. Dopo il resume verifica che machine e operation siano `Running`, che la current operation sia la stessa e che il progress sia conservato.
+
 ## Modalita' Interattiva E CLI
 
 `create_live_demo.py` senza `--non-interactive` chiede i valori principali mostrando i default tra parentesi. Invio accetta il default. I booleani accettano `s/n`, `si/no`, `y/n`.
@@ -186,5 +228,9 @@ Con `--non-interactive` non viene aperto nessun prompt; lo script usa gli argome
 - Macchina occupata: lo start puo' fallire con `422 Business rule violation` se il runtime e' gia' assegnato.
 - Workpiece gia' terminale: lo start da sequence number puo' fallire se il workpiece scelto e' `Completed`, `Failed`, `Cancelled` o `Skipped`.
 - Macchina non `Faulted`: `recover_fault_scenario.py` richiede una macchina in fault con current operation presente.
+- Nessuna operation corrente: pause/resume/recover richiedono `currentOperation` nello snapshot Live.
+- Operation non `Running`: `pause_current_operation.py` puo' mettere in pausa solo operation `Running`.
+- Operation non `Paused`: `resume_current_operation.py` puo' riprendere solo operation `Paused`.
+- Macchina `Faulted`: risolvere prima l'allarme bloccante con `recover_fault_scenario.py`.
 - Piu' allarmi ambigui: usare la modalita' interattiva per scegliere quale allarme risolvere.
 - `422 Business rule violation`: il client stampa status, title, detail e `traceId` quando presenti nel `problem+json`.

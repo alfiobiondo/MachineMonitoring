@@ -10,6 +10,7 @@ import {
   MachineRuntimeChangedEvent,
 } from '../models/machine-realtime-event.model';
 import {
+  MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS,
   MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS,
   MachineSnapshotStore,
 } from './machine-snapshot.store';
@@ -395,16 +396,206 @@ describe('MachineSnapshotStore', () => {
     expect(api.getByMachineId).toHaveBeenCalledTimes(1);
   });
 
-  it('should update non-terminal progress without forcing a refresh', () => {
+  it('should update non-terminal progress without forcing an immediate refresh', () => {
     vi.useFakeTimers();
     api.getByMachineId.mockReturnValue(of(snapshot));
 
     store.load('M-001');
-    store.applyOperationChanged(createOperationEvent({ status: 'Running', progressPercentage: 80 }));
-    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
 
     expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(80);
     expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reconcile aggregate progress from a throttled silent refresh', () => {
+    vi.useFakeTimers();
+    api.getByMachineId
+      .mockReturnValueOnce(of(snapshot))
+      .mockReturnValueOnce(
+        of({
+          ...snapshot,
+          productionLot: {
+            ...snapshot.productionLot!,
+            progressPercentage: 80,
+          },
+          currentWorkpiece: {
+            ...snapshot.currentWorkpiece!,
+            progressPercentage: 80,
+          },
+          currentOperation: {
+            ...snapshot.currentOperation!,
+            progressPercentage: 80,
+          },
+        }),
+      );
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
+
+    expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(80);
+    expect(store.snapshot()?.currentWorkpiece?.progressPercentage).toBe(50);
+    expect(store.snapshot()?.productionLot?.progressPercentage).toBe(50);
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+    expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(80);
+    expect(store.snapshot()?.currentWorkpiece?.progressPercentage).toBe(80);
+    expect(store.snapshot()?.productionLot?.progressPercentage).toBe(80);
+  });
+
+  it('should reconcile progress within three hundred milliseconds', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 70,
+      }),
+    );
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS - 1);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+    expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
+  });
+
+  it('should not request a progress reconciliation for every realtime increment in the same window', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 70,
+      }),
+    );
+    vi.advanceTimersByTime(100);
+
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
+    vi.advanceTimersByTime(100);
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 90,
+      }),
+    );
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS - 200);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+  });
+
+  it('should not postpone the pending progress reconciliation when new progress events arrive', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 70,
+      }),
+    );
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS - 100);
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
+
+    vi.advanceTimersByTime(99);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+  });
+
+  it('should allow a new progress reconciliation window after the previous GET', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 70,
+      }),
+    );
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
+
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(3);
+  });
+
+  it('should cancel a pending progress refresh when a terminal operation event arrives', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'progress',
+        status: 'Running',
+        progressPercentage: 80,
+      }),
+    );
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS - 50);
+
+    store.applyOperationChanged(
+      createOperationEvent({
+        changeKind: 'status',
+        status: 'Completed',
+        progressPercentage: 100,
+      }),
+    );
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
   });
 
   it.each(['Completed', 'Failed', 'Cancelled', 'Skipped'])(

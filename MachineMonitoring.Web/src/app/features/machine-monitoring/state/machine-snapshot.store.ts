@@ -16,6 +16,7 @@ import {
 } from '../models/machine-realtime-event.model';
 
 export const MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS = 250;
+export const MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS = 300;
 
 export interface MachineSnapshotLoadOptions {
   force?: boolean;
@@ -265,6 +266,8 @@ export class MachineSnapshotStore {
 
     if (shouldRefreshAfterOperationStatus(event.status)) {
       this.scheduleSilentRefresh();
+    } else if (event.changeKind === 'progress') {
+      this.scheduleProgressSilentRefresh();
     }
   }
 
@@ -306,6 +309,27 @@ export class MachineSnapshotStore {
         silent: true,
       });
     }, MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+  }
+
+  private scheduleProgressSilentRefresh(): void {
+    const machineId = this.currentMachineIdState();
+
+    if (machineId === null || this.silentRefreshTimer !== null) {
+      return;
+    }
+
+    this.silentRefreshTimer = setTimeout(() => {
+      this.silentRefreshTimer = null;
+
+      if (this.currentMachineIdState() !== machineId) {
+        return;
+      }
+
+      this.load(machineId, {
+        force: true,
+        silent: true,
+      });
+    }, MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
   }
 
   private cancelScheduledSilentRefresh(): void {
