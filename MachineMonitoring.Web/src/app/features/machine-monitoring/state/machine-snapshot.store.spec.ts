@@ -5,8 +5,14 @@ import { vi } from 'vitest';
 
 import { MachineSnapshotApi } from '../api/machine-snapshot.api';
 import { MachineSnapshot } from '../models/machine-snapshot.model';
-import { MachineSnapshotStore } from './machine-snapshot.store';
-import { MachineOperationChangedEvent } from '../models/machine-realtime-event.model';
+import {
+  MachineOperationChangedEvent,
+  MachineRuntimeChangedEvent,
+} from '../models/machine-realtime-event.model';
+import {
+  MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS,
+  MachineSnapshotStore,
+} from './machine-snapshot.store';
 
 describe('MachineSnapshotStore', () => {
   let store: MachineSnapshotStore;
@@ -57,6 +63,37 @@ describe('MachineSnapshotStore', () => {
     snapshotAt: '2026-07-20T12:00:01Z',
   };
 
+  const completedSnapshot: MachineSnapshot = {
+    ...snapshot,
+    machine: {
+      ...snapshot.machine,
+      status: 'Available',
+      lastChangedAt: '2026-07-20T12:00:10Z',
+    },
+    runtimeVersion: 4,
+    productionLot: {
+      ...snapshot.productionLot!,
+      status: 'Completed',
+      progressPercentage: 100,
+      completedOperations: 1,
+      totalOperations: 1,
+    },
+    currentWorkpiece: {
+      ...snapshot.currentWorkpiece!,
+      status: 'Completed',
+      progressPercentage: 100,
+      completedOperations: 1,
+      totalOperations: 1,
+    },
+    currentOperation: {
+      ...snapshot.currentOperation!,
+      status: 'Completed',
+      progressPercentage: 100,
+      currentPhase: 'Finishing cut',
+    },
+    snapshotAt: '2026-07-20T12:00:11Z',
+  };
+
   beforeEach(() => {
     api = {
       getByMachineId: vi.fn(),
@@ -77,6 +114,7 @@ describe('MachineSnapshotStore', () => {
 
   afterEach(() => {
     store.destroy();
+    vi.useRealTimers();
   });
 
   it('should expose the initial state', () => {
@@ -357,6 +395,119 @@ describe('MachineSnapshotStore', () => {
     expect(api.getByMachineId).toHaveBeenCalledTimes(1);
   });
 
+  it('should update non-terminal progress without forcing a refresh', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(createOperationEvent({ status: 'Running', progressPercentage: 80 }));
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+    expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(80);
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['Completed', 'Failed', 'Cancelled', 'Skipped'])(
+    'should schedule a silent refresh when operation status becomes %s',
+    (status) => {
+      vi.useFakeTimers();
+      api.getByMachineId.mockReturnValue(of(snapshot));
+
+      store.load('M-001');
+      store.applyOperationChanged(createOperationEvent({ status }));
+
+      expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+      expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+      expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
+      expect(store.loading()).toBe(false);
+    },
+  );
+
+  it.each(['Available', 'Faulted', 'Paused'])(
+    'should schedule a silent refresh when runtime status becomes %s',
+    (status) => {
+      vi.useFakeTimers();
+      api.getByMachineId.mockReturnValue(of(snapshot));
+
+      store.load('M-001');
+      store.applyRuntimeChanged(createRuntimeEvent({ status, version: 4 }));
+
+      expect(store.snapshot()?.machine.status).toBe(status);
+      expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+      expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+      expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
+      expect(store.loading()).toBe(false);
+    },
+  );
+
+  it('should debounce multiple realtime reconciliation requests into one silent refresh', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(createOperationEvent({ status: 'Completed', progressPercentage: 100 }));
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS - 1);
+    store.applyRuntimeChanged(createRuntimeEvent({ status: 'Available', version: 4 }));
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+    expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
+  });
+
+  it('should keep the snapshot visible without global error or loading when a debounced silent refresh fails', () => {
+    vi.useFakeTimers();
+    const refreshError = new HttpErrorResponse({
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+
+    api.getByMachineId
+      .mockReturnValueOnce(of(snapshot))
+      .mockReturnValueOnce(throwError(() => refreshError));
+
+    store.load('M-001');
+    store.applyOperationChanged(createOperationEvent({ status: 'Completed', progressPercentage: 100 }));
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+    expect(store.snapshot()).toEqual({
+      ...snapshot,
+      currentOperation: expect.objectContaining({
+        status: 'Completed',
+        progressPercentage: 100,
+      }),
+    });
+    expect(store.errorMessage()).toBeNull();
+    expect(store.loading()).toBe(false);
+    expect(store.refreshing()).toBe(false);
+  });
+
+  it('should reconcile operation, workpiece, and production lot percentages from the next snapshot', () => {
+    vi.useFakeTimers();
+    api.getByMachineId.mockReturnValueOnce(of(snapshot)).mockReturnValueOnce(of(completedSnapshot));
+
+    store.load('M-001');
+    store.applyOperationChanged(createOperationEvent({ status: 'Completed', progressPercentage: 100 }));
+
+    expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(100);
+    expect(store.snapshot()?.currentWorkpiece?.progressPercentage).toBe(50);
+    expect(store.snapshot()?.productionLot?.progressPercentage).toBe(50);
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
+    expect(store.snapshot()?.currentOperation?.progressPercentage).toBe(100);
+    expect(store.snapshot()?.currentWorkpiece?.progressPercentage).toBe(100);
+    expect(store.snapshot()?.productionLot?.progressPercentage).toBe(100);
+    expect(store.snapshot()?.currentWorkpiece?.status).toBe('Completed');
+    expect(store.snapshot()?.productionLot?.status).toBe('Completed');
+    expect(store.loading()).toBe(false);
+  });
+
   it('should ignore an operation change for another machine', () => {
     api.getByMachineId.mockReturnValue(of(snapshot));
 
@@ -388,6 +539,7 @@ describe('MachineSnapshotStore', () => {
   });
 
   it('should silently reload the snapshot when another operation changes', () => {
+    vi.useFakeTimers();
     const refreshRequest = new Subject<MachineSnapshot>();
 
     api.getByMachineId
@@ -416,6 +568,10 @@ describe('MachineSnapshotStore', () => {
 
     store.applyOperationChanged(event);
 
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+
     expect(api.getByMachineId).toHaveBeenCalledTimes(2);
     expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
     expect(store.snapshot()).toEqual(snapshot);
@@ -441,4 +597,44 @@ describe('MachineSnapshotStore', () => {
     expect(store.refreshing()).toBe(false);
     expect(store.snapshot()?.currentOperation?.id).toBe('operation-2');
   });
+
+  function createOperationEvent(
+    overrides: Partial<MachineOperationChangedEvent> = {},
+  ): MachineOperationChangedEvent {
+    return {
+      eventId: 'event-operation',
+      changeKind: 'status',
+      operationId: 'operation-1',
+      workpieceId: 'workpiece-1',
+      machineId: 'M-001',
+      sequenceNumber: 2,
+      type: 'LaserCutting',
+      status: 'Running',
+      progressPercentage: 80,
+      currentPhase: 'Finishing',
+      failureReason: null,
+      createdAt: '2026-07-20T11:50:00Z',
+      startedAt: '2026-07-20T11:55:00Z',
+      completedAt: null,
+      occurredAt: '2026-07-20T12:00:02Z',
+      ...overrides,
+    };
+  }
+
+  function createRuntimeEvent(
+    overrides: Partial<MachineRuntimeChangedEvent> = {},
+  ): MachineRuntimeChangedEvent {
+    return {
+      eventId: 'event-runtime',
+      machineId: 'M-001',
+      status: 'Running',
+      currentOperationId: 'operation-1',
+      lastChangedAt: '2026-07-20T12:00:03Z',
+      failureReason: null,
+      activeAlarmId: null,
+      version: 4,
+      occurredAt: '2026-07-20T12:00:03Z',
+      ...overrides,
+    };
+  }
 });

@@ -15,6 +15,8 @@ import {
   MachineRuntimeChangedEvent,
 } from '../models/machine-realtime-event.model';
 
+export const MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS = 250;
+
 export interface MachineSnapshotLoadOptions {
   force?: boolean;
   silent?: boolean;
@@ -33,6 +35,7 @@ export class MachineSnapshotStore {
   private activeRequest: Subscription | null = null;
   private activeRequestMachineId: string | null = null;
   private requestVersion = 0;
+  private silentRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly currentMachineId = this.currentMachineIdState.asReadonly();
   readonly snapshot = this.snapshotState.asReadonly();
@@ -227,6 +230,10 @@ export class MachineSnapshotStore {
         lastChangedAt: event.lastChangedAt,
       },
     });
+
+    if (shouldRefreshAfterRuntimeStatus(event.status)) {
+      this.scheduleSilentRefresh();
+    }
   }
 
   applyOperationChanged(event: MachineOperationChangedEvent): void {
@@ -240,10 +247,7 @@ export class MachineSnapshotStore {
     const currentOperation = currentSnapshot.currentOperation;
 
     if (currentOperation === null || currentOperation.id !== event.operationId) {
-      this.load(event.machineId, {
-        force: true,
-        silent: true,
-      });
+      this.scheduleSilentRefresh();
 
       return;
     }
@@ -258,10 +262,15 @@ export class MachineSnapshotStore {
         startedAt: event.startedAt,
       },
     });
+
+    if (shouldRefreshAfterOperationStatus(event.status)) {
+      this.scheduleSilentRefresh();
+    }
   }
 
   destroy(): void {
     this.cancelActiveRequest();
+    this.cancelScheduledSilentRefresh();
     this.requestVersion++;
     this.currentMachineIdState.set(null);
     this.loadingState.set(false);
@@ -272,6 +281,40 @@ export class MachineSnapshotStore {
     this.activeRequest?.unsubscribe();
     this.activeRequest = null;
     this.activeRequestMachineId = null;
+  }
+
+  private scheduleSilentRefresh(): void {
+    const machineId = this.currentMachineIdState();
+
+    if (machineId === null) {
+      return;
+    }
+
+    if (this.silentRefreshTimer !== null) {
+      clearTimeout(this.silentRefreshTimer);
+    }
+
+    this.silentRefreshTimer = setTimeout(() => {
+      this.silentRefreshTimer = null;
+
+      if (this.currentMachineIdState() !== machineId) {
+        return;
+      }
+
+      this.load(machineId, {
+        force: true,
+        silent: true,
+      });
+    }, MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+  }
+
+  private cancelScheduledSilentRefresh(): void {
+    if (this.silentRefreshTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.silentRefreshTimer);
+    this.silentRefreshTimer = null;
   }
 
   private isStaleResponse(machineId: string, requestVersion: number): boolean {
@@ -319,4 +362,12 @@ export class MachineSnapshotStore {
       warnings: currentSnapshot.warnings,
     };
   }
+}
+
+function shouldRefreshAfterOperationStatus(status: string): boolean {
+  return ['Completed', 'Failed', 'Cancelled', 'Skipped'].includes(status);
+}
+
+function shouldRefreshAfterRuntimeStatus(status: string): boolean {
+  return ['Available', 'Faulted', 'Paused'].includes(status);
 }
