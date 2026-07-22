@@ -23,6 +23,7 @@ public sealed class MachineOperationApplicationService
     private readonly IMachineRuntimeStateRepository _machineRuntimeStateRepository;
     private readonly IProductionTransactionManager _transactionManager;
     private readonly ProductionSequenceService _productionSequenceService;
+    private readonly MachineOperationStartCoordinator _operationStartCoordinator;
     private readonly LaserCutConfigurationValidator _configurationValidator;
     private readonly IProductionNotificationPublisher _notificationPublisher;
     private readonly ILogger<MachineOperationApplicationService> _logger;
@@ -39,6 +40,7 @@ public sealed class MachineOperationApplicationService
         IMachineRuntimeStateRepository machineRuntimeStateRepository,
         IProductionTransactionManager transactionManager,
         ProductionSequenceService productionSequenceService,
+        MachineOperationStartCoordinator operationStartCoordinator,
         LaserCutConfigurationValidator configurationValidator,
         IProductionNotificationPublisher notificationPublisher,
         ILogger<MachineOperationApplicationService> logger
@@ -57,6 +59,7 @@ public sealed class MachineOperationApplicationService
         ArgumentNullException.ThrowIfNull(machineRuntimeStateRepository);
         ArgumentNullException.ThrowIfNull(transactionManager);
         ArgumentNullException.ThrowIfNull(productionSequenceService);
+        ArgumentNullException.ThrowIfNull(operationStartCoordinator);
         ArgumentNullException.ThrowIfNull(configurationValidator);
         ArgumentNullException.ThrowIfNull(notificationPublisher);
         ArgumentNullException.ThrowIfNull(logger);
@@ -72,6 +75,7 @@ public sealed class MachineOperationApplicationService
         _machineRuntimeStateRepository = machineRuntimeStateRepository;
         _transactionManager = transactionManager;
         _productionSequenceService = productionSequenceService;
+        _operationStartCoordinator = operationStartCoordinator;
         _configurationValidator = configurationValidator;
         _notificationPublisher = notificationPublisher;
         _logger = logger;
@@ -86,7 +90,22 @@ public sealed class MachineOperationApplicationService
 
         ValidateCreateCommand(command);
 
-        await GetRequiredWorkpieceAsync(command.WorkpieceId, cancellationToken);
+        Workpiece workpiece = await GetRequiredWorkpieceAsync(
+            command.WorkpieceId,
+            cancellationToken
+        );
+
+        if (
+            workpiece.Status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+        )
+        {
+            throw new BusinessRuleViolationException(
+                $"Workpiece {workpiece.Code} cannot accept new operations from status {workpiece.Status}."
+            );
+        }
 
         Material material = await GetRequiredMaterialAsync(command.MaterialId, cancellationToken);
 
@@ -193,33 +212,13 @@ public sealed class MachineOperationApplicationService
 
                 await _productionSequenceService.EnsureOperationCanStartAsync(operation, ct);
 
-                MachineRuntimeState runtimeState = await GetOrCreateRuntimeStateAsync(
-                    operation.MachineId,
-                    ct,
-                    operation
-                );
-
-                await EnsureMachineCanAcceptOperationAsync(runtimeState, operation, ct);
-
                 DateTimeOffset startedAt = DateTimeOffset.UtcNow;
-                int expectedVersion = runtimeState.Version;
-                operation.Start(startedAt: startedAt, initialPhase: command.InitialPhase);
-                runtimeState.StartOperation(operation.Id, startedAt);
-
-                await _machineOperationRepository.UpdateAsync(operation, ct);
-                await SaveRuntimeStateAsync(runtimeState, expectedVersion, ct);
-                await AppendEventAsync(
+                await _operationStartCoordinator.StartAsync(
                     operation,
-                    MachineOperationEventType.Started,
-                    previousStatus: MachineOperationStatus.Queued,
-                    newStatus: operation.Status,
-                    reason: null,
-                    machineAlarmId: null,
-                    cancellationToken: ct
+                    command.InitialPhase,
+                    startedAt,
+                    ct
                 );
-
-                await PublishOperationStatusNotificationAsync(operation, ct);
-                await PublishMachineRuntimeNotificationAsync(runtimeState, ct);
                 _logger.LogInformation("Machine operation {OperationId} started.", operation.Id);
             },
             cancellationToken
@@ -336,13 +335,24 @@ public sealed class MachineOperationApplicationService
                     operation
                 );
 
-                if (
-                    runtimeState.Status != MachineRuntimeStatus.Running
-                    || runtimeState.CurrentOperationId != operation.Id
-                )
+                if (runtimeState.Status != MachineRuntimeStatus.Running)
                 {
                     throw new BusinessRuleViolationException(
-                        $"Operation {operation.Id} cannot advance while machine {operation.MachineId} is {runtimeState.Status}."
+                        $"Operation {operation.Id} cannot advance because machine {operation.MachineId} runtime is {runtimeState.Status}; expected Running. Current operation assignment: {FormatOperationAssignment(runtimeState.CurrentOperationId)}."
+                    );
+                }
+
+                if (runtimeState.CurrentOperationId is not Guid currentOperationId)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Operation {operation.Id} cannot advance because machine {operation.MachineId} runtime is Running without a current operation assignment."
+                    );
+                }
+
+                if (currentOperationId != operation.Id)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Operation {operation.Id} cannot advance because machine {operation.MachineId} runtime is assigned to operation {currentOperationId}."
                     );
                 }
 
@@ -410,14 +420,14 @@ public sealed class MachineOperationApplicationService
                     cancellationToken: ct
                 );
 
+                await PublishOperationStatusNotificationAsync(operation, ct);
+                await PublishMachineRuntimeNotificationAsync(runtimeState, ct);
                 await _productionSequenceService.HandleOperationCompletedAsync(
                     operation,
                     initialPhase: "Preparing laser",
                     ct
                 );
 
-                await PublishOperationStatusNotificationAsync(operation, ct);
-                await PublishMachineRuntimeNotificationAsync(runtimeState, ct);
                 _logger.LogInformation("Machine operation {OperationId} completed.", operation.Id);
             },
             cancellationToken
@@ -1108,6 +1118,11 @@ public sealed class MachineOperationApplicationService
             && runtimeState.Status is MachineRuntimeStatus.Paused or MachineRuntimeStatus.Available
             && runtimeState.CurrentOperationId == operation.Id
             && !activeAlarms.Any(MachineAlarmBlockingPolicy.IsBlocking);
+    }
+
+    private static string FormatOperationAssignment(Guid? operationId)
+    {
+        return operationId?.ToString() ?? "none";
     }
 
     private static MachineRuntimeState CreateRuntimeStateFromOperation(MachineOperation operation)

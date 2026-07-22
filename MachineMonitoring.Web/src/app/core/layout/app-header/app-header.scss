@@ -1,0 +1,41 @@
+:host {
+  display: block;
+  z-index: 20;
+  min-width: 0;
+}
+
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1.35fr) minmax(18rem, 1fr) minmax(14rem, 0.8fr);
+  gap: 0.8rem 1rem;
+  align-items: stretch;
+  min-height: 6.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #cbd8d5;
+  background:
+    linear-gradient(135deg, rgb(12 74 110 / 0.08), transparent 42%),
+    #eef6f4;
+
+  &__title {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #17202a;
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  app-header-machine-status,
+  app-header-runtime-summary,
+  app-header-notifications {
+    display: block;
+    min-width: 0;
+    height: 100%;
+  }
+}
+
+@media (max-width: 1080px) {
+  .app-header {
+    grid-template-columns: 1fr;
+  }
+}

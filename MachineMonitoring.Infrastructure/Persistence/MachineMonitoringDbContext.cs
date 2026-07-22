@@ -739,6 +739,13 @@ public sealed class MachineMonitoringDbContext : DbContext
                 .HasMaxLength(50)
                 .IsRequired();
 
+            entity
+                .Property(lot => lot.ExecutionMode)
+                .HasColumnName("execution_mode")
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
             entity.Property(lot => lot.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(lot => lot.StartedAt).HasColumnName("started_at");
             entity.Property(lot => lot.CompletedAt).HasColumnName("completed_at");

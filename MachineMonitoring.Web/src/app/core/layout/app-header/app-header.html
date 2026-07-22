@@ -1,0 +1,10 @@
+<header class="app-header">
+  <h1 class="app-header__title">MachineMonitoring</h1>
+
+  <app-header-machine-status [context]="context()" />
+  <app-header-runtime-summary
+    [context]="context()"
+    [refreshing]="refreshing()"
+  />
+  <app-header-notifications [context]="context()" />
+</header>

@@ -682,6 +682,12 @@ namespace MachineMonitoring.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("ExecutionMode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("execution_mode");
+
                     b.Property<int>("PlannedQuantity")
                         .HasColumnType("integer")
                         .HasColumnName("planned_quantity");

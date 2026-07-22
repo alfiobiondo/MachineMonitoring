@@ -44,13 +44,13 @@ public sealed class MachineOperationSimulatorWorker : BackgroundService
                 MachineOperationSimulator simulator =
                     scope.ServiceProvider.GetRequiredService<MachineOperationSimulator>();
 
-                IMachineOperationRepository repository =
-                    scope.ServiceProvider.GetRequiredService<IMachineOperationRepository>();
+                MachineRuntimeAssignedOperationQuery assignedOperationQuery =
+                    scope.ServiceProvider.GetRequiredService<MachineRuntimeAssignedOperationQuery>();
                 IMachineRuntimeStateRepository runtimeStateRepository =
                     scope.ServiceProvider.GetRequiredService<IMachineRuntimeStateRepository>();
 
                 IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineOperation> runningOperations =
-                    await repository.GetRunningOperationsAsync(stoppingToken);
+                    await assignedOperationQuery.GetAssignedRunningOperationsAsync(stoppingToken);
                 IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineRuntimeState> runtimeStates =
                     await runtimeStateRepository.GetAllAsync(stoppingToken);
 

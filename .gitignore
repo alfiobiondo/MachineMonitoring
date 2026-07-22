@@ -1,4 +1,6 @@
 /**/bin
 /**/obj
 packages/
-/.GitInfo.cache
+/.DS_Store
+**/.DS_Store
+/.GitInfo.cache.DS_Store

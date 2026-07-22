@@ -2,6 +2,7 @@ using MachineMonitoring.Application.Exceptions;
 using MachineMonitoring.Application.Production.Commands;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
+using MachineMonitoring.Domain.Production;
 
 namespace MachineMonitoring.Application.Production;
 
@@ -28,6 +29,30 @@ public sealed class ProductionLotApplicationService
         _workpieceRepository = workpieceRepository;
         _machineOperationRepository = machineOperationRepository;
         _productionSequenceService = productionSequenceService;
+    }
+
+    public async Task<CreateProductionLotResult> CreateAsync(
+        CreateProductionLotCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        ProductionLot productionLot = new(
+            id: Guid.NewGuid(),
+            code: command.Code,
+            plannedQuantity: command.PlannedQuantity,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        await _productionLotRepository.AddAsync(productionLot, cancellationToken);
+
+        return new CreateProductionLotResult(
+            ProductionLotId: productionLot.Id,
+            Code: productionLot.Code,
+            PlannedQuantity: productionLot.PlannedQuantity,
+            Status: productionLot.Status
+        );
     }
 
     public Task StartAsync(StartProductionLotCommand command, CancellationToken cancellationToken)

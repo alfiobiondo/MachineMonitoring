@@ -115,10 +115,20 @@ public sealed class MachineAlarmApplicationService
                     if (!activeMachineAlarms.Any(MachineAlarmBlockingPolicy.IsBlocking))
                     {
                         int expectedVersion = runtimeState.Version;
-                        runtimeState.ResolveFault(operationId: null, DateTimeOffset.UtcNow);
+                        DateTimeOffset runtimeChangedAt = DateTimeOffset.UtcNow;
+                        runtimeState.ResolveFault(operationId: null, runtimeChangedAt);
                         await _machineRuntimeStateRepository.UpdateAsync(
                             runtimeState,
                             expectedVersion,
+                            ct
+                        );
+                        await _notificationPublisher.PublishAsync(
+                            new MachineRuntimeStatusChangedNotification(
+                                MachineId: runtimeState.MachineId,
+                                Status: runtimeState.Status,
+                                CurrentOperationId: runtimeState.CurrentOperationId,
+                                OccurredAt: runtimeChangedAt
+                            ),
                             ct
                         );
                     }

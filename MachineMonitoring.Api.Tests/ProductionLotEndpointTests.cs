@@ -28,7 +28,42 @@ public sealed class ProductionLotEndpointTests
     }
 
     [Fact]
-    public async Task StartProductionLot_ActivatesAllWorkpiecesAndStartsFirstOperationOfEach()
+    public async Task CreateProductionLot_WithValidRequest_ReturnsCreated()
+    {
+        CreateProductionLotRequest request = new("LOT-CREATE-001", 3);
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/production-lots", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        CreateProductionLotResponse? created =
+            await response.Content.ReadFromJsonAsync<CreateProductionLotResponse>();
+
+        Assert.NotNull(created);
+        Assert.NotEqual(Guid.Empty, created.ProductionLotId);
+        Assert.Equal(request.Code, created.Code);
+        Assert.Equal(request.PlannedQuantity, created.PlannedQuantity);
+        Assert.Equal("Planned", created.Status);
+        Assert.NotNull(response.Headers.Location);
+        Assert.EndsWith(
+            $"/api/production-lots/{created.ProductionLotId}",
+            response.Headers.Location!.ToString(),
+            StringComparison.Ordinal
+        );
+
+        ProductionLot? stored = await _factory.ProductionLotRepository.GetByIdAsync(
+            created.ProductionLotId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(stored);
+        Assert.Equal(request.Code, stored.Code);
+        Assert.Equal(request.PlannedQuantity, stored.PlannedQuantity);
+        Assert.Equal(ProductionLotStatus.Planned, stored.Status);
+    }
+
+    [Fact]
+    public async Task StartProductionLot_StartsOnlyInitialWorkpieceAndFirstOperation()
     {
         // Arrange
         ProductionLot lot = new(
@@ -43,7 +78,7 @@ public sealed class ProductionLotEndpointTests
 
         MachineOperation firstOperation = CreateQueuedOperation(firstWorkpiece.Id, 1);
         MachineOperation secondOperation = CreateQueuedOperation(firstWorkpiece.Id, 2);
-        MachineOperation thirdOperation = CreateQueuedOperation(secondWorkpiece.Id, 1);
+        MachineOperation thirdOperation = CreateQueuedOperation(secondWorkpiece.Id, 1, "M-002");
 
         _factory.MachineOperationRepository.Seed(firstOperation);
         _factory.MachineOperationRepository.Seed(secondOperation);
@@ -70,14 +105,32 @@ public sealed class ProductionLotEndpointTests
             thirdOperation.Id,
             CancellationToken.None
         );
+        Workpiece? storedFirstWorkpiece = await _factory.WorkpieceRepository.GetByIdAsync(
+            firstWorkpiece.Id,
+            CancellationToken.None
+        );
+        Workpiece? storedSecondWorkpiece = await _factory.WorkpieceRepository.GetByIdAsync(
+            secondWorkpiece.Id,
+            CancellationToken.None
+        );
+        ProductionLot? storedLot = await _factory.ProductionLotRepository.GetByIdAsync(
+            lot.Id,
+            CancellationToken.None
+        );
 
         Assert.NotNull(storedFirst);
         Assert.NotNull(storedSecond);
         Assert.NotNull(storedThird);
+        Assert.NotNull(storedFirstWorkpiece);
+        Assert.NotNull(storedSecondWorkpiece);
+        Assert.NotNull(storedLot);
 
+        Assert.Equal(ProductionLotExecutionMode.LotSequence, storedLot.ExecutionMode);
+        Assert.True(storedFirstWorkpiece.IsSequenceActive);
+        Assert.False(storedSecondWorkpiece.IsSequenceActive);
         Assert.Equal(MachineOperationStatus.Running, storedFirst.Status);
         Assert.Equal(MachineOperationStatus.Queued, storedSecond.Status);
-        Assert.Equal(MachineOperationStatus.Running, storedThird.Status);
+        Assert.Equal(MachineOperationStatus.Queued, storedThird.Status);
     }
 
     [Fact]
@@ -125,13 +178,17 @@ public sealed class ProductionLotEndpointTests
         return workpiece;
     }
 
-    private static MachineOperation CreateQueuedOperation(Guid workpieceId, int sequenceNumber)
+    private static MachineOperation CreateQueuedOperation(
+        Guid workpieceId,
+        int sequenceNumber,
+        string machineId = "M-001"
+    )
     {
         return new MachineOperation(
             id: Guid.NewGuid(),
             workpieceId: workpieceId,
             sequenceNumber: sequenceNumber,
-            machineId: "M-001",
+            machineId: machineId,
             type: MachineOperationType.LaserCutting,
             createdAt: DateTimeOffset.UtcNow.AddMinutes(sequenceNumber)
         );

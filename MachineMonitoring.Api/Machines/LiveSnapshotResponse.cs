@@ -7,6 +7,7 @@ public sealed record LiveSnapshotResponse(
     LiveSnapshotWorkpieceResponse? CurrentWorkpiece,
     LiveSnapshotOperationResponse? CurrentOperation,
     IReadOnlyCollection<LiveSnapshotAlarmResponse> ActiveAlarms,
+    IReadOnlyCollection<LiveSnapshotWarningResponse> Warnings,
     DateTimeOffset SnapshotAt
 );
 
@@ -58,4 +59,17 @@ public sealed record LiveSnapshotAlarmResponse(
     string Message,
     bool IsBlocking,
     DateTimeOffset RaisedAt
+);
+
+public sealed record LiveSnapshotWarningResponse(
+    string Id,
+    string MachineId,
+    string Code,
+    string Severity,
+    string Title,
+    string Message,
+    DateTimeOffset DetectedAt,
+    DateTimeOffset? ResolvedAt,
+    bool IsActive,
+    string? SourceId
 );

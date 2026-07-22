@@ -1,0 +1,27 @@
+<aside class="app-sidebar" aria-label="Navigazione principale">
+  <nav class="app-sidebar__nav">
+    <a
+      [routerLink]="['/machines', machineId(), 'live']"
+      routerLinkActive="app-sidebar__link--active"
+      class="app-sidebar__link"
+    >
+      Live
+    </a>
+
+    <a
+      [routerLink]="['/machines', machineId(), 'programming']"
+      routerLinkActive="app-sidebar__link--active"
+      class="app-sidebar__link"
+    >
+      Programmazione
+    </a>
+
+    <a
+      [routerLink]="['/machines', machineId(), 'technology-parameters']"
+      routerLinkActive="app-sidebar__link--active"
+      class="app-sidebar__link"
+    >
+      Parametri tecnologici
+    </a>
+  </nav>
+</aside>

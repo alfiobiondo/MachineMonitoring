@@ -1,0 +1,25 @@
+<section class="runtime-summary" aria-label="Runtime sintetico">
+  <header class="runtime-summary__header">
+    <p class="runtime-summary__title">Runtime</p>
+    <span
+      class="runtime-summary__refresh"
+      [class.runtime-summary__refresh--active]="refreshing()"
+    >
+      {{ refreshing() ? 'Aggiornamento' : 'Stabile' }}
+    </span>
+  </header>
+
+  <div class="runtime-summary__content">
+    <strong>Snapshot HTTP</strong>
+
+    @if (context(); as currentContext) {
+      <span class="runtime-summary__meta">Versione {{ currentContext.runtimeVersion ?? 'n/d' }}</span>
+      <span class="runtime-summary__meta runtime-summary__meta--single-line">
+        Aggiornato {{ currentContext.snapshotAt | date: 'dd/MM/yyyy HH:mm:ss' }}
+      </span>
+    } @else {
+      <span class="runtime-summary__meta">Nessuno snapshot caricato</span>
+      <span class="runtime-summary__meta">Versione n/d</span>
+    }
+  </div>
+</section>

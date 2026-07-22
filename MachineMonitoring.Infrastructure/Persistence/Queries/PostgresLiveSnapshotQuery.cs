@@ -57,6 +57,9 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
                 CurrentOperationStatus: item.CurrentOperationId == null
                     ? null
                     : item.CurrentOperation!.Status,
+                CurrentOperationMachineId: item.CurrentOperationId == null
+                    ? null
+                    : item.CurrentOperation!.MachineId,
                 CurrentOperationSequenceNumber: item.CurrentOperationId == null
                     ? null
                     : item.CurrentOperation!.SequenceNumber,
@@ -138,6 +141,12 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
             ))
             .ToArray();
 
+        LiveSnapshotWarningResult[] warnings = await GetWarningsAsync(
+            machine.Id,
+            runtimeSnapshot,
+            cancellationToken
+        );
+
         LiveSnapshotMachineResult machineResult = new(
             Id: machine.Id,
             Name: machine.Name,
@@ -154,6 +163,7 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
                 CurrentWorkpiece: null,
                 CurrentOperation: null,
                 ActiveAlarms: activeAlarms,
+                Warnings: warnings,
                 SnapshotAt: _timeProvider.GetUtcNow()
             );
         }
@@ -286,8 +296,99 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
             CurrentWorkpiece: currentWorkpieceResult,
             CurrentOperation: currentOperationResult,
             ActiveAlarms: activeAlarms,
+            Warnings: warnings,
             SnapshotAt: _timeProvider.GetUtcNow()
         );
+    }
+
+    private async Task<LiveSnapshotWarningResult[]> GetWarningsAsync(
+        string machineId,
+        RuntimeSnapshotProjection? runtimeSnapshot,
+        CancellationToken cancellationToken
+    )
+    {
+        List<LiveSnapshotWarningResult> warnings = [];
+
+        if (
+            runtimeSnapshot?.Status == MachineRuntimeStatus.Running
+            && runtimeSnapshot.CurrentOperationId is null
+        )
+        {
+            warnings.Add(
+                new LiveSnapshotWarningResult(
+                    Id: $"{machineId}:RuntimeWithoutCurrentOperation",
+                    MachineId: machineId,
+                    Code: "RuntimeWithoutCurrentOperation",
+                    Severity: "Warning",
+                    Title: "Runtime senza operation corrente",
+                    Message: "La macchina risulta Running, ma il runtime non punta a una operation corrente.",
+                    DetectedAt: runtimeSnapshot.LastChangedAt,
+                    ResolvedAt: null,
+                    IsActive: true,
+                    SourceId: null
+                )
+            );
+        }
+
+        if (
+            runtimeSnapshot?.CurrentOperationId is Guid currentOperationId
+            && runtimeSnapshot.CurrentOperationMachineId is string currentOperationMachineId
+            && !string.Equals(currentOperationMachineId, machineId, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            warnings.Add(
+                new LiveSnapshotWarningResult(
+                    Id: $"{machineId}:RuntimeOperationMismatch:{currentOperationId}",
+                    MachineId: machineId,
+                    Code: "RuntimeOperationMismatch",
+                    Severity: "Warning",
+                    Title: "Operation assegnata a un'altra macchina",
+                    Message:
+                        $"Il runtime punta all'operation {currentOperationId}, assegnata alla macchina {currentOperationMachineId}.",
+                    DetectedAt: runtimeSnapshot.LastChangedAt,
+                    ResolvedAt: null,
+                    IsActive: true,
+                    SourceId: currentOperationId.ToString()
+                )
+            );
+        }
+
+        Guid? runtimeOperationId = runtimeSnapshot?.CurrentOperationId;
+
+        OrphanRunningOperationProjection[] orphanRunningOperations = await _dbContext
+            .MachineOperations.AsNoTracking()
+            .Where(operation =>
+                operation.MachineId == machineId
+                && operation.Status == MachineOperationStatus.Running
+                && (!runtimeOperationId.HasValue || operation.Id != runtimeOperationId.Value)
+            )
+            .OrderBy(operation => operation.StartedAt)
+            .ThenBy(operation => operation.CreatedAt)
+            .ThenBy(operation => operation.Id)
+            .Select(operation => new OrphanRunningOperationProjection(
+                OperationId: operation.Id,
+                StartedAt: operation.StartedAt,
+                CreatedAt: operation.CreatedAt
+            ))
+            .ToArrayAsync(cancellationToken);
+
+        warnings.AddRange(
+            orphanRunningOperations.Select(operation => new LiveSnapshotWarningResult(
+                Id: $"{machineId}:OrphanRunningOperation:{operation.OperationId}",
+                MachineId: machineId,
+                Code: "OrphanRunningOperation",
+                Severity: "Warning",
+                Title: "Operation running non assegnata",
+                Message:
+                    $"L'operation {operation.OperationId} risulta Running sulla macchina, ma non e' l'operation corrente del runtime.",
+                DetectedAt: operation.StartedAt ?? operation.CreatedAt,
+                ResolvedAt: null,
+                IsActive: true,
+                SourceId: operation.OperationId.ToString()
+            ))
+        );
+
+        return warnings.ToArray();
     }
 
     private sealed record RuntimeSnapshotProjection(
@@ -298,6 +399,7 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
         Guid? CurrentOperationId,
         MachineOperationType? CurrentOperationType,
         MachineOperationStatus? CurrentOperationStatus,
+        string? CurrentOperationMachineId,
         int? CurrentOperationSequenceNumber,
         int? CurrentOperationPosition,
         int? CurrentOperationTotalOperations,
@@ -334,5 +436,11 @@ public sealed class PostgresLiveSnapshotQuery : ILiveSnapshotQuery
         MachineAlarmStatus Status,
         string Message,
         DateTimeOffset RaisedAt
+    );
+
+    private sealed record OrphanRunningOperationProjection(
+        Guid OperationId,
+        DateTimeOffset? StartedAt,
+        DateTimeOffset CreatedAt
     );
 }

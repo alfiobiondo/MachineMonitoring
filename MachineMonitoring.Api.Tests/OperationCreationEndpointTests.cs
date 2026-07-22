@@ -169,6 +169,40 @@ public sealed class OperationCreationEndpointTests
         Assert.Equal("Resource not found", problemDetails.Title);
     }
 
+    [Fact]
+    public async Task CreateOperation_WhenWorkpieceIsTerminal_ReturnsUnprocessableEntity()
+    {
+        SeedValidCatalog();
+        SeedProductionHierarchy();
+
+        Workpiece terminalWorkpiece = new(
+            id: Guid.NewGuid(),
+            productionLotId: ProductionLotId,
+            sequenceNumber: 2,
+            code: "WP-FAILED-001",
+            materialCode: "INOX-304",
+            createdAt: DateTimeOffset.UtcNow
+        );
+        terminalWorkpiece.Fail(DateTimeOffset.UtcNow);
+        _factory.WorkpieceRepository.Seed(terminalWorkpiece);
+
+        CreateMachineOperationRequest request = CreateValidRequest() with
+        {
+            WorkpieceId = terminalWorkpiece.Id,
+            SequenceNumber = 1,
+        };
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/operations", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ProblemDetails? problemDetails = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.NotNull(problemDetails);
+        Assert.Equal("Business rule violation", problemDetails.Title);
+        Assert.Contains("cannot accept new operations", problemDetails.Detail);
+    }
+
     private void SeedValidCatalog()
     {
         Material material = new(

@@ -1,0 +1,59 @@
+@use '../header-card' as header;
+
+.runtime-summary {
+  @include header.card-shell;
+
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  background: rgb(255 255 255 / 0.62);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    gap: 0.75rem;
+  }
+
+  &__title {
+    @include header.card-title;
+  }
+
+  &__meta {
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+
+    &--single-line {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__content {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    gap: 0.3rem;
+  }
+
+  strong {
+    color: #17202a;
+    font-size: 1rem;
+  }
+
+  &__refresh {
+    @include header.header-chip;
+
+    flex: 0 0 auto;
+    color: #64748b;
+    background: rgb(100 116 139 / 0.1);
+
+    &--active {
+      color: #92400e;
+      background: rgb(245 158 11 / 0.15);
+    }
+  }
+}

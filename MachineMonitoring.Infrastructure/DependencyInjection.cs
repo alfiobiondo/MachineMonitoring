@@ -1,9 +1,9 @@
-using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production;
+using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Infrastructure.HealthChecks;
 using MachineMonitoring.Infrastructure.Persistence;
-using MachineMonitoring.Infrastructure.Persistence.Queries;
 using MachineMonitoring.Infrastructure.Persistence.Outbox;
+using MachineMonitoring.Infrastructure.Persistence.Queries;
 using MachineMonitoring.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -41,6 +41,16 @@ public static class DependencyInjection
         );
         services.AddSingleton<ProductionNotificationOutboxSerializer>();
 
+        services.AddSingleton<OutboxWakeUpSignal>();
+
+        services.AddScoped<IOutboxProcessor, OutboxProcessor>();
+
+        services
+            .AddOptions<OutboxProcessingOptions>()
+            .Bind(configuration.GetSection(OutboxProcessingOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services
             .AddHealthChecks()
             .AddCheck<PostgreSqlHealthCheck>(
@@ -54,7 +64,10 @@ public static class DependencyInjection
         services.AddScoped<ILiveSnapshotQuery, PostgresLiveSnapshotQuery>();
         services.AddScoped<IProductionLotRepository, PostgresProductionLotRepository>();
         services.AddScoped<IWorkpieceRepository, PostgresWorkpieceRepository>();
-        services.AddScoped<IMachineOperationEventRepository, PostgresMachineOperationEventRepository>();
+        services.AddScoped<
+            IMachineOperationEventRepository,
+            PostgresMachineOperationEventRepository
+        >();
         services.AddScoped<IMachineAlarmRepository, PostgresMachineAlarmRepository>();
         services.AddScoped<IMachineRuntimeStateRepository, PostgresMachineRuntimeStateRepository>();
 

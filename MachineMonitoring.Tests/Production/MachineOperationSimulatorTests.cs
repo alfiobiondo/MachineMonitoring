@@ -5,6 +5,7 @@ using MachineMonitoring.Application.Production.Commands;
 using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Infrastructure.Production.InMemory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MachineMonitoring.Tests.Production;
@@ -26,12 +27,21 @@ public sealed class MachineOperationSimulatorTests
         InMemoryProductionLotRepository productionLotRepository = new();
         _eventRepository = new InMemoryMachineOperationEventRepository();
         _alarmRepository = new InMemoryMachineAlarmRepository();
+        NoOpProductionNotificationPublisher notificationPublisher = new();
+        MachineOperationStartCoordinator operationStartCoordinator = new(
+            machineOperationRepository: _operationRepository,
+            machineOperationEventRepository: _eventRepository,
+            machineAlarmRepository: _alarmRepository,
+            machineRuntimeStateRepository: _runtimeStateRepository,
+            notificationPublisher: notificationPublisher
+        );
 
         ProductionSequenceService sequenceService = new(
             productionLotRepository,
             workpieceRepository,
             _operationRepository,
             _eventRepository,
+            operationStartCoordinator,
             new NoOpProductionTransactionManager(),
             NullLogger<ProductionSequenceService>.Instance
         );
@@ -48,8 +58,9 @@ public sealed class MachineOperationSimulatorTests
             machineRuntimeStateRepository: _runtimeStateRepository,
             transactionManager: new NoOpProductionTransactionManager(),
             productionSequenceService: sequenceService,
+            operationStartCoordinator: operationStartCoordinator,
             configurationValidator: new Domain.Technology.LaserCutConfigurationValidator(),
-            notificationPublisher: new NoOpProductionNotificationPublisher(),
+            notificationPublisher: notificationPublisher,
             logger: NullLogger<MachineOperationApplicationService>.Instance
         );
 
@@ -113,6 +124,157 @@ public sealed class MachineOperationSimulatorTests
         Assert.NotNull(storedOperation);
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
         Assert.Equal(20, storedOperation.ProgressPercentage);
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenRuntimeRunningReferencesRunningOperation_ReturnsOperation()
+    {
+        MachineOperation operation = await CreatePersistedRunningOperationAsync();
+        await AddRunningRuntimeAssignmentAsync(operation.MachineId, operation.Id);
+
+        RecordingLogger<MachineRuntimeAssignedOperationQuery> logger = new();
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery(logger);
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        MachineOperation assignedOperation = Assert.Single(operations);
+        Assert.Equal(operation.Id, assignedOperation.Id);
+        Assert.Empty(logger.WarningMessages);
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenOperationRunningButNotAssignedByRuntime_IgnoresOperation()
+    {
+        MachineOperation operation = await CreatePersistedRunningOperationAsync();
+        RecordingLogger<MachineRuntimeAssignedOperationQuery> logger = new();
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery(logger);
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.Empty(operations);
+        Assert.Empty(logger.WarningMessages);
+        Assert.NotNull(storedOperation);
+        Assert.Equal(0, storedOperation.ProgressPercentage);
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenRuntimeRunningWithoutCurrentOperation_WarnsAndReturnsNone()
+    {
+        MachineRuntimeState runtimeState = MachineRuntimeState.Restore(
+            machineId: "M-001",
+            status: MachineRuntimeStatus.Running,
+            currentOperationId: null,
+            lastChangedAt: DateTimeOffset.UtcNow,
+            failureReason: null,
+            activeAlarmId: null,
+            version: 1
+        );
+        await _runtimeStateRepository.AddAsync(runtimeState, CancellationToken.None);
+
+        RecordingLogger<MachineRuntimeAssignedOperationQuery> logger = new();
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery(logger);
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        Assert.Empty(operations);
+        Assert.Contains(
+            logger.WarningMessages,
+            message => message.Contains("Running but has no current operation assignment")
+        );
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenRuntimeReferencesOperationThatIsNotRunning_WarnsAndReturnsNone()
+    {
+        MachineOperation operation = new(
+            id: Guid.NewGuid(),
+            workpieceId: _workpieceId,
+            sequenceNumber: 1,
+            machineId: "M-001",
+            type: MachineOperationType.LaserCutting,
+            createdAt: DateTimeOffset.UtcNow
+        );
+        await _operationRepository.AddAsync(
+            operation,
+            CreateConfiguration(operation.Id),
+            CancellationToken.None
+        );
+        await AddRunningRuntimeAssignmentAsync(operation.MachineId, operation.Id);
+
+        RecordingLogger<MachineRuntimeAssignedOperationQuery> logger = new();
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery(logger);
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        Assert.Empty(operations);
+        Assert.Contains(
+            logger.WarningMessages,
+            message => message.Contains("with status Queued")
+        );
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenRuntimeAndOperationMachineMismatch_WarnsAndReturnsNone()
+    {
+        MachineOperation operation = await CreatePersistedRunningOperationAsync(machineId: "M-002");
+        await AddRunningRuntimeAssignmentAsync("M-001", operation.Id);
+
+        RecordingLogger<MachineRuntimeAssignedOperationQuery> logger = new();
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery(logger);
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        Assert.Empty(operations);
+        Assert.Contains(
+            logger.WarningMessages,
+            message => message.Contains("assigned to machine M-002")
+        );
+    }
+
+    [Fact]
+    public async Task AssignedOperationQuery_WhenTwoOperationsRunOnSameMachine_ProcessesOnlyRuntimeAssignedOperation()
+    {
+        MachineOperation assigned = await CreatePersistedRunningOperationAsync(sequenceNumber: 1);
+        MachineOperation unassigned = await CreatePersistedRunningOperationAsync(sequenceNumber: 2);
+        await AddRunningRuntimeAssignmentAsync(assigned.MachineId, assigned.Id);
+
+        MachineOperationSimulator simulator = CreateSimulator(
+            progressStrategy: new FixedOperationProgressStrategy(20)
+        );
+        MachineRuntimeAssignedOperationQuery query = CreateAssignedOperationQuery();
+
+        IReadOnlyCollection<MachineOperation> operations =
+            await query.GetAssignedRunningOperationsAsync(CancellationToken.None);
+
+        foreach (MachineOperation operation in operations)
+        {
+            await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
+        }
+
+        MachineOperation? storedAssigned = await _operationRepository.GetByIdAsync(
+            assigned.Id,
+            CancellationToken.None
+        );
+        MachineOperation? storedUnassigned = await _operationRepository.GetByIdAsync(
+            unassigned.Id,
+            CancellationToken.None
+        );
+
+        Assert.Single(operations);
+        Assert.NotNull(storedAssigned);
+        Assert.NotNull(storedUnassigned);
+        Assert.Equal(20, storedAssigned.ProgressPercentage);
+        Assert.Equal(0, storedUnassigned.ProgressPercentage);
     }
 
     [Fact]
@@ -289,13 +451,37 @@ public sealed class MachineOperationSimulatorTests
         );
     }
 
-    private async Task<MachineOperation> CreatePersistedRunningOperationAsync()
+    private MachineRuntimeAssignedOperationQuery CreateAssignedOperationQuery(
+        ILogger<MachineRuntimeAssignedOperationQuery>? logger = null
+    )
+    {
+        return new MachineRuntimeAssignedOperationQuery(
+            _runtimeStateRepository,
+            _operationRepository,
+            logger ?? NullLogger<MachineRuntimeAssignedOperationQuery>.Instance
+        );
+    }
+
+    private async Task AddRunningRuntimeAssignmentAsync(string machineId, Guid operationId)
+    {
+        MachineRuntimeState runtimeState = MachineRuntimeState.CreateAvailable(
+            machineId,
+            DateTimeOffset.UtcNow
+        );
+        runtimeState.StartOperation(operationId, DateTimeOffset.UtcNow);
+        await _runtimeStateRepository.AddAsync(runtimeState, CancellationToken.None);
+    }
+
+    private async Task<MachineOperation> CreatePersistedRunningOperationAsync(
+        int sequenceNumber = 1,
+        string machineId = "M-001"
+    )
     {
         MachineOperation operation = new(
             id: Guid.NewGuid(),
             workpieceId: _workpieceId,
-            sequenceNumber: 1,
-            machineId: "M-001",
+            sequenceNumber: sequenceNumber,
+            machineId: machineId,
             type: MachineOperationType.LaserCutting,
             createdAt: DateTimeOffset.UtcNow
         );
@@ -496,6 +682,33 @@ public sealed class MachineOperationSimulatorTests
         )
         {
             return Task.FromResult(_machines);
+        }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> WarningMessages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                WarningMessages.Add(formatter(state, exception));
+            }
         }
     }
 

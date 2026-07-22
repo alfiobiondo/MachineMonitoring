@@ -28,6 +28,103 @@ public sealed class WorkpieceEndpointTests
     }
 
     [Fact]
+    public async Task CreateWorkpiece_WithValidRequest_ReturnsCreated()
+    {
+        ProductionLot lot = SeedProductionLot();
+
+        CreateWorkpieceRequest request = new(
+            ProductionLotId: lot.Id,
+            SequenceNumber: 1,
+            Code: "WP-CREATE-001",
+            MaterialCode: "INOX-304"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/workpieces", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        CreateWorkpieceResponse? created =
+            await response.Content.ReadFromJsonAsync<CreateWorkpieceResponse>();
+
+        Assert.NotNull(created);
+        Assert.NotEqual(Guid.Empty, created.WorkpieceId);
+        Assert.Equal(request.ProductionLotId, created.ProductionLotId);
+        Assert.Equal(request.SequenceNumber, created.SequenceNumber);
+        Assert.Equal(request.Code, created.Code);
+        Assert.Equal(request.MaterialCode, created.MaterialCode);
+        Assert.Equal("Pending", created.Status);
+        Assert.NotNull(response.Headers.Location);
+        Assert.EndsWith(
+            $"/api/workpieces/{created.WorkpieceId}",
+            response.Headers.Location!.ToString(),
+            StringComparison.Ordinal
+        );
+
+        Workpiece? stored = await _factory.WorkpieceRepository.GetByIdAsync(
+            created.WorkpieceId,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(stored);
+        Assert.Equal(request.ProductionLotId, stored.ProductionLotId);
+        Assert.Equal(request.SequenceNumber, stored.SequenceNumber);
+        Assert.Equal(request.Code, stored.Code);
+        Assert.Equal(request.MaterialCode, stored.MaterialCode);
+        Assert.Equal(WorkpieceStatus.Pending, stored.Status);
+    }
+
+    [Fact]
+    public async Task CreateWorkpiece_WhenProductionLotDoesNotExist_ReturnsNotFound()
+    {
+        CreateWorkpieceRequest request = new(
+            ProductionLotId: Guid.NewGuid(),
+            SequenceNumber: 1,
+            Code: "WP-CREATE-404",
+            MaterialCode: "INOX-304"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/workpieces", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateWorkpiece_WhenSequenceNumberIsNotPositive_ReturnsBadRequest()
+    {
+        ProductionLot lot = SeedProductionLot();
+
+        CreateWorkpieceRequest request = new(
+            ProductionLotId: lot.Id,
+            SequenceNumber: 0,
+            Code: "WP-CREATE-400",
+            MaterialCode: "INOX-304"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/workpieces", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateWorkpiece_WhenProductionLotIsTerminal_ReturnsUnprocessableEntity()
+    {
+        ProductionLot lot = SeedProductionLot();
+        lot.Complete(DateTimeOffset.UtcNow);
+        await _factory.ProductionLotRepository.UpdateAsync(lot, CancellationToken.None);
+
+        CreateWorkpieceRequest request = new(
+            ProductionLotId: lot.Id,
+            SequenceNumber: 1,
+            Code: "WP-CREATE-422",
+            MaterialCode: "INOX-304"
+        );
+
+        HttpResponseMessage response = await _client.PostAsJsonAsync("/api/workpieces", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
     public async Task StartWorkpiece_StartsOnlyFirstQueuedOperation()
     {
         // Arrange
@@ -142,12 +239,7 @@ public sealed class WorkpieceEndpointTests
 
     private Workpiece SeedWorkpieceHierarchy()
     {
-        ProductionLot lot = new(
-            id: Guid.NewGuid(),
-            code: $"LOT-{Guid.NewGuid():N}",
-            plannedQuantity: 2,
-            createdAt: DateTimeOffset.UtcNow
-        );
+        ProductionLot lot = SeedProductionLot();
 
         Workpiece workpiece = new(
             id: Guid.NewGuid(),
@@ -162,6 +254,19 @@ public sealed class WorkpieceEndpointTests
         _factory.WorkpieceRepository.Seed(workpiece);
 
         return workpiece;
+    }
+
+    private ProductionLot SeedProductionLot()
+    {
+        ProductionLot lot = new(
+            id: Guid.NewGuid(),
+            code: $"LOT-{Guid.NewGuid():N}",
+            plannedQuantity: 2,
+            createdAt: DateTimeOffset.UtcNow
+        );
+
+        _factory.ProductionLotRepository.Seed(lot);
+        return lot;
     }
 
     private static MachineOperation CreateQueuedOperation(Guid workpieceId, int sequenceNumber)

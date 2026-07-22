@@ -3,9 +3,11 @@ using MachineMonitoring.Api.Catalogs;
 using MachineMonitoring.Api.Common;
 using MachineMonitoring.Api.Errors;
 using MachineMonitoring.Api.HealthChecks;
+using MachineMonitoring.Api.Hubs;
 using MachineMonitoring.Api.Machines;
 using MachineMonitoring.Api.Operations;
 using MachineMonitoring.Api.Production;
+using MachineMonitoring.Api.Realtime;
 using MachineMonitoring.Application;
 using MachineMonitoring.Application.Common;
 using MachineMonitoring.Application.Exceptions;
@@ -15,9 +17,11 @@ using MachineMonitoring.Application.Production.Repositories;
 using MachineMonitoring.Application.Production.Results;
 using MachineMonitoring.Domain.Production;
 using MachineMonitoring.Domain.Technology;
-using MachineMonitoring.Infrastructure.Configuration;
 using MachineMonitoring.Infrastructure;
+using MachineMonitoring.Infrastructure.Configuration;
+using MachineMonitoring.Infrastructure.Persistence.Outbox;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Scalar.AspNetCore;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -44,13 +48,37 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddSignalR();
+
+builder.Services.AddScoped<IOutboxMessageDispatcher, SignalROutboxMessageDispatcher>();
+
+builder.Services.AddHostedService<OutboxProcessingBackgroundService>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "MachineMonitoringWeb",
+        policy =>
+        {
+            policy
+                .WithOrigins("http://localhost:4200")
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+    );
+});
+
 WebApplication app = builder.Build();
 
 app.UseExceptionHandler();
 
+app.UseCors("MachineMonitoringWeb");
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
@@ -72,6 +100,8 @@ app.MapHealthChecks(
         ResponseWriter = HealthCheckResponseWriter.WriteAsync,
     }
 );
+
+app.MapHub<MachineMonitoringHub>("/hubs/machine-monitoring");
 
 app.MapGet(
         "/api/operations",
@@ -184,6 +214,60 @@ app.MapGet(
     )
     .WithName("GetOperationEvents")
     .WithTags("Operations");
+
+app.MapPost(
+        "/api/production-lots",
+        async (
+            CreateProductionLotRequest request,
+            ProductionLotApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            CreateProductionLotResult result = await service.CreateAsync(
+                new CreateProductionLotCommand(
+                    Code: request.Code,
+                    PlannedQuantity: request.PlannedQuantity
+                ),
+                cancellationToken
+            );
+
+            return Results.CreatedAtRoute(
+                routeName: "GetProductionLot",
+                routeValues: new { productionLotId = result.ProductionLotId },
+                value: CreateProductionLotCreatedResponse(result)
+            );
+        }
+    )
+    .WithName("CreateProductionLot")
+    .WithTags("Production");
+
+app.MapPost(
+        "/api/workpieces",
+        async (
+            CreateWorkpieceRequest request,
+            WorkpieceApplicationService service,
+            CancellationToken cancellationToken
+        ) =>
+        {
+            CreateWorkpieceResult result = await service.CreateAsync(
+                new CreateWorkpieceCommand(
+                    ProductionLotId: request.ProductionLotId,
+                    SequenceNumber: request.SequenceNumber,
+                    Code: request.Code,
+                    MaterialCode: request.MaterialCode
+                ),
+                cancellationToken
+            );
+
+            return Results.CreatedAtRoute(
+                routeName: "GetWorkpiece",
+                routeValues: new { workpieceId = result.WorkpieceId },
+                value: CreateWorkpieceCreatedResponse(result)
+            );
+        }
+    )
+    .WithName("CreateWorkpiece")
+    .WithTags("Production");
 
 app.MapPost(
         "/api/operations",
@@ -508,7 +592,9 @@ app.MapPost(
 
             if (!isValidSeverity)
             {
-                throw new ArgumentException($"Invalid machine alarm severity '{request.Severity}'.");
+                throw new ArgumentException(
+                    $"Invalid machine alarm severity '{request.Severity}'."
+                );
             }
 
             FaultMachineOperationCommand command = new(
@@ -656,11 +742,7 @@ app.MapGet(
 
 app.MapGet(
         "/api/machines/{machineId}/live-snapshot",
-        async (
-            string machineId,
-            ILiveSnapshotQuery query,
-            CancellationToken cancellationToken
-        ) =>
+        async (string machineId, ILiveSnapshotQuery query, CancellationToken cancellationToken) =>
         {
             LiveSnapshotResult result = await query.GetByMachineIdAsync(
                 machineId,
@@ -1084,6 +1166,30 @@ static WorkpieceDetailsResponse CreateWorkpieceDetailsResponse(WorkpieceDetailsR
     );
 }
 
+static CreateProductionLotResponse CreateProductionLotCreatedResponse(
+    CreateProductionLotResult result
+)
+{
+    return new CreateProductionLotResponse(
+        ProductionLotId: result.ProductionLotId,
+        Code: result.Code,
+        PlannedQuantity: result.PlannedQuantity,
+        Status: result.Status.ToString()
+    );
+}
+
+static CreateWorkpieceResponse CreateWorkpieceCreatedResponse(CreateWorkpieceResult result)
+{
+    return new CreateWorkpieceResponse(
+        WorkpieceId: result.WorkpieceId,
+        ProductionLotId: result.ProductionLotId,
+        SequenceNumber: result.SequenceNumber,
+        Code: result.Code,
+        MaterialCode: result.MaterialCode,
+        Status: result.Status.ToString()
+    );
+}
+
 static ProductionLotDetailsResponse CreateProductionLotDetailsResponse(
     ProductionLotDetailsResult result
 )
@@ -1213,8 +1319,8 @@ static LiveSnapshotResponse CreateLiveSnapshotResponse(LiveSnapshotResult result
                 CurrentPhase: result.CurrentOperation.CurrentPhase,
                 StartedAt: result.CurrentOperation.StartedAt
             ),
-        ActiveAlarms: result.ActiveAlarms
-            .Select(alarm => new LiveSnapshotAlarmResponse(
+        ActiveAlarms: result
+            .ActiveAlarms.Select(alarm => new LiveSnapshotAlarmResponse(
                 Id: alarm.Id,
                 Code: alarm.Code,
                 Severity: alarm.Severity.ToString(),
@@ -1222,6 +1328,20 @@ static LiveSnapshotResponse CreateLiveSnapshotResponse(LiveSnapshotResult result
                 Message: alarm.Message,
                 IsBlocking: alarm.IsBlocking,
                 RaisedAt: alarm.RaisedAt
+            ))
+            .ToArray(),
+        Warnings: result
+            .Warnings.Select(warning => new LiveSnapshotWarningResponse(
+                Id: warning.Id,
+                MachineId: warning.MachineId,
+                Code: warning.Code,
+                Severity: warning.Severity,
+                Title: warning.Title,
+                Message: warning.Message,
+                DetectedAt: warning.DetectedAt,
+                ResolvedAt: warning.ResolvedAt,
+                IsActive: warning.IsActive,
+                SourceId: warning.SourceId
             ))
             .ToArray(),
         SnapshotAt: result.SnapshotAt

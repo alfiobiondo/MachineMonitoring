@@ -1,0 +1,82 @@
+@use '../header-card' as header;
+
+.machine-status {
+  @include header.card-shell;
+
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  background: rgb(255 255 255 / 0.72);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    gap: 0.75rem;
+  }
+
+  &__title {
+    @include header.card-title;
+  }
+
+  &__meta {
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  &__content {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    gap: 0.25rem;
+  }
+
+  &__name {
+    overflow: hidden;
+    color: #17202a;
+    font-size: 1.2rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__badge {
+    @include header.header-chip;
+
+    flex: 0 0 auto;
+
+    &--available {
+      color: #0f766e;
+      background: rgb(15 118 110 / 0.12);
+    }
+
+    &--running {
+      color: #1d4ed8;
+      background: rgb(29 78 216 / 0.12);
+    }
+
+    &--paused {
+      color: #a16207;
+      background: rgb(161 98 7 / 0.14);
+    }
+
+    &--faulted {
+      color: #b91c1c;
+      background: rgb(185 28 28 / 0.12);
+    }
+
+    &--maintenance {
+      color: #c2410c;
+      background: rgb(194 65 12 / 0.12);
+    }
+
+    &--offline,
+    &--muted {
+      color: #64748b;
+      background: rgb(100 116 139 / 0.12);
+    }
+  }
+}

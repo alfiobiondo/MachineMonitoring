@@ -1,0 +1,61 @@
+:host {
+  display: block;
+  min-height: 0;
+}
+
+.app-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 1.5rem;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.25rem;
+  border-left: 1px solid #d7dee8;
+  background: #f7f9fb;
+
+  &__nav {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  &__link {
+    display: block;
+    padding: 0.7rem 0.8rem;
+    border-radius: 0.5rem;
+    color: #546179;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  &__link--active {
+    color: #0f766e;
+    background: rgb(15 118 110 / 0.1);
+  }
+}
+
+@media (max-width: 900px) {
+  :host,
+  .app-sidebar {
+    min-height: auto;
+    height: auto;
+  }
+
+  .app-sidebar {
+    overflow: visible;
+    border-left: 0;
+    border-bottom: 1px solid #d7dee8;
+
+    &__nav {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  .app-sidebar {
+    &__nav {
+      grid-template-columns: 1fr;
+    }
+  }
+}

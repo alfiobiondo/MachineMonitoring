@@ -78,6 +78,7 @@ public sealed class PostgresLiveSnapshotQueryTests
         Assert.Null(result.CurrentWorkpiece);
         Assert.Null(result.CurrentOperation);
         Assert.Single(alarms);
+        Assert.Empty(result.Warnings);
         Assert.False(alarms[0].IsBlocking);
         Assert.Equal(snapshotAt, result.SnapshotAt);
         Assert.Equal(runtimeCountBefore, runtimeCountAfter);
@@ -114,6 +115,38 @@ public sealed class PostgresLiveSnapshotQueryTests
         Assert.Null(result.ProductionLot);
         Assert.Null(result.CurrentWorkpiece);
         Assert.Null(result.CurrentOperation);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task GetByMachineIdAsync_WhenRuntimeIsRunningWithoutCurrentOperation_ReturnsRuntimeWarning()
+    {
+        const string machineId = "M-LIVE-WARN-RUNTIME-ONLY";
+        DateTimeOffset changedAt = new(2026, 7, 20, 10, 45, 0, TimeSpan.Zero);
+
+        await SeedRuntimeStateAsync(
+            machineId,
+            status: MachineRuntimeStatus.Running,
+            currentOperationId: null,
+            lastChangedAt: changedAt,
+            version: 5
+        );
+
+        await using MachineMonitoringDbContext dbContext = CreateDbContext();
+        PostgresLiveSnapshotQuery query = new(
+            dbContext,
+            CreateMachineProvider(machineId),
+            new FixedTimeProvider(changedAt.AddMinutes(1))
+        );
+
+        LiveSnapshotResult result = await query.GetByMachineIdAsync(machineId, CancellationToken.None);
+        LiveSnapshotWarningResult warning = Assert.Single(result.Warnings);
+
+        Assert.Equal("RuntimeWithoutCurrentOperation", warning.Code);
+        Assert.Equal(machineId, warning.MachineId);
+        Assert.Equal(changedAt, warning.DetectedAt);
+        Assert.True(warning.IsActive);
+        Assert.Null(warning.SourceId);
     }
 
     [Fact]
@@ -188,9 +221,95 @@ public sealed class PostgresLiveSnapshotQueryTests
         Assert.Equal(2, alarms.Length);
         Assert.False(alarms[0].IsBlocking);
         Assert.True(alarms[1].IsBlocking);
+        Assert.Empty(result.Warnings);
         Assert.Equal(snapshotAt, result.SnapshotAt);
-        Assert.Equal(3, interceptor.ReadCount);
+        Assert.Equal(4, interceptor.ReadCount);
         Assert.Equal(0, interceptor.WriteCount);
+    }
+
+    [Fact]
+    public async Task GetByMachineIdAsync_WhenRuntimeReferencesOperationOnAnotherMachine_ReturnsMismatchWarning()
+    {
+        const string machineId = "M-LIVE-WARN-MISMATCH";
+        const string operationMachineId = "M-LIVE-WARN-OTHER";
+        DateTimeOffset changedAt = new(2026, 7, 20, 11, 15, 0, TimeSpan.Zero);
+        Guid productionLotId = Guid.NewGuid();
+        Guid currentWorkpieceId = Guid.NewGuid();
+        Guid secondaryWorkpieceId = Guid.NewGuid();
+        Guid currentOperationId = Guid.NewGuid();
+
+        await SeedProductionHierarchyAsync(
+            operationMachineId,
+            productionLotId,
+            currentWorkpieceId,
+            secondaryWorkpieceId,
+            currentOperationId,
+            addRuntimeState: false
+        );
+        await SeedRuntimeStateAsync(
+            machineId,
+            MachineRuntimeStatus.Running,
+            currentOperationId,
+            changedAt,
+            version: 12
+        );
+
+        await using MachineMonitoringDbContext dbContext = CreateDbContext();
+        PostgresLiveSnapshotQuery query = new(
+            dbContext,
+            CreateMachineProvider(machineId),
+            new FixedTimeProvider(changedAt.AddMinutes(1))
+        );
+
+        LiveSnapshotResult result = await query.GetByMachineIdAsync(machineId, CancellationToken.None);
+        LiveSnapshotWarningResult warning = Assert.Single(result.Warnings);
+
+        Assert.Equal("RuntimeOperationMismatch", warning.Code);
+        Assert.Equal(machineId, warning.MachineId);
+        Assert.Equal(currentOperationId.ToString(), warning.SourceId);
+        Assert.Contains(operationMachineId, warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetByMachineIdAsync_WhenAnotherOperationIsRunningForMachine_ReturnsOrphanWarning()
+    {
+        const string machineId = "M-LIVE-WARN-ORPHAN";
+        DateTimeOffset startedAt = new(2026, 7, 20, 11, 20, 0, TimeSpan.Zero);
+        Guid productionLotId = Guid.NewGuid();
+        Guid currentWorkpieceId = Guid.NewGuid();
+        Guid secondaryWorkpieceId = Guid.NewGuid();
+        Guid currentOperationId = Guid.NewGuid();
+        Guid orphanOperationId = Guid.NewGuid();
+
+        await SeedProductionHierarchyAsync(
+            machineId,
+            productionLotId,
+            currentWorkpieceId,
+            secondaryWorkpieceId,
+            currentOperationId
+        );
+        await SeedRunningOperationAsync(
+            machineId,
+            secondaryWorkpieceId,
+            orphanOperationId,
+            sequenceNumber: 35,
+            startedAt
+        );
+
+        await using MachineMonitoringDbContext dbContext = CreateDbContext();
+        PostgresLiveSnapshotQuery query = new(
+            dbContext,
+            CreateMachineProvider(machineId),
+            new FixedTimeProvider(startedAt.AddMinutes(1))
+        );
+
+        LiveSnapshotResult result = await query.GetByMachineIdAsync(machineId, CancellationToken.None);
+        LiveSnapshotWarningResult warning = Assert.Single(result.Warnings);
+
+        Assert.Equal("OrphanRunningOperation", warning.Code);
+        Assert.Equal(machineId, warning.MachineId);
+        Assert.Equal(orphanOperationId.ToString(), warning.SourceId);
+        Assert.Equal(startedAt, warning.DetectedAt);
     }
 
     [Fact]
@@ -220,7 +339,7 @@ public sealed class PostgresLiveSnapshotQueryTests
 
             interceptor.Reset();
             _ = await query.GetByMachineIdAsync(singleMachineId, CancellationToken.None);
-            Assert.Equal(3, interceptor.ReadCount);
+            Assert.Equal(4, interceptor.ReadCount);
         }
 
         int singleScenarioReadCount = interceptor.ReadCount;
@@ -473,7 +592,8 @@ public sealed class PostgresLiveSnapshotQueryTests
         Guid productionLotId,
         Guid currentWorkpieceId,
         Guid secondaryWorkpieceId,
-        Guid currentOperationId
+        Guid currentOperationId,
+        bool addRuntimeState = true
     )
     {
         await using MachineMonitoringDbContext dbContext = CreateDbContext();
@@ -588,16 +708,47 @@ public sealed class PostgresLiveSnapshotQueryTests
             }
         );
 
-        dbContext.MachineRuntimeStates.Add(
-            new MachineRuntimeStateRecord
+        if (addRuntimeState)
+        {
+            dbContext.MachineRuntimeStates.Add(
+                new MachineRuntimeStateRecord
+                {
+                    MachineId = machineId,
+                    Status = MachineRuntimeStatus.Running,
+                    CurrentOperationId = currentOperationId,
+                    LastChangedAt = DateTimeOffset.UtcNow.AddMinutes(-3),
+                    FailureReason = null,
+                    ActiveAlarmId = null,
+                    Version = 7,
+                }
+            );
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private async Task SeedRunningOperationAsync(
+        string machineId,
+        Guid workpieceId,
+        Guid operationId,
+        int sequenceNumber,
+        DateTimeOffset startedAt
+    )
+    {
+        await using MachineMonitoringDbContext dbContext = CreateDbContext();
+        dbContext.MachineOperations.Add(
+            new MachineOperationRecord
             {
+                Id = operationId,
+                WorkpieceId = workpieceId,
+                SequenceNumber = sequenceNumber,
                 MachineId = machineId,
-                Status = MachineRuntimeStatus.Running,
-                CurrentOperationId = currentOperationId,
-                LastChangedAt = DateTimeOffset.UtcNow.AddMinutes(-3),
-                FailureReason = null,
-                ActiveAlarmId = null,
-                Version = 7,
+                Type = MachineOperationType.LaserCutting,
+                Status = MachineOperationStatus.Running,
+                ProgressPercentage = 10,
+                CurrentPhase = "Unexpected running operation",
+                CreatedAt = startedAt.AddMinutes(-1),
+                StartedAt = startedAt,
             }
         );
 

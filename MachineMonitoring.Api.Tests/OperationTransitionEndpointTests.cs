@@ -236,7 +236,7 @@ public sealed class OperationTransitionEndpointTests
 
         Assert.NotNull(problemDetails);
         Assert.Equal("Business rule violation", problemDetails.Title);
-        Assert.Contains("cannot be started from status Running", problemDetails.Detail);
+        Assert.Contains("already running operation", problemDetails.Detail);
     }
 
     [Fact]

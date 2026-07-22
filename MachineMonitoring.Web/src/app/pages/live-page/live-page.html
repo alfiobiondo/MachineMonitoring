@@ -1,0 +1,63 @@
+<main class="live-page">
+  @if (store.loading()) {
+    <section class="live-page__state">
+      <p>Caricamento dello stato Live…</p>
+    </section>
+  } @else if (store.errorMessage(); as error) {
+    <section class="live-page__state live-page__state--error">
+      <h2>Errore</h2>
+      <p>{{ error }}</p>
+    </section>
+  } @else if (store.snapshot()) {
+    <section class="live-page__content">
+      <p class="live-page__machine-request">
+        Macchina richiesta: {{ store.currentMachineId() }}
+      </p>
+
+      <p
+        class="live-page__production-context"
+        [class.live-page__production-context--active]="productionContext().tone === 'active'"
+        [class.live-page__production-context--paused]="productionContext().tone === 'paused'"
+        [class.live-page__production-context--faulted]="productionContext().tone === 'faulted'"
+      >
+        {{ productionContext().text }}
+      </p>
+
+      <div class="live-page__progress-grid">
+        <app-live-progress-card
+          [title]="lotCard().title"
+          [status]="lotCard().status"
+          [metaText]="lotCard().metaText"
+          [label]="lotCard().label"
+          [detailText]="lotCard().detailText"
+          [progress]="lotCard().progress"
+          [isEmpty]="lotCard().isEmpty"
+        />
+
+        <app-live-progress-card
+          [title]="workpieceCard().title"
+          [status]="workpieceCard().status"
+          [metaText]="workpieceCard().metaText"
+          [label]="workpieceCard().label"
+          [detailText]="workpieceCard().detailText"
+          [progress]="workpieceCard().progress"
+          [isEmpty]="workpieceCard().isEmpty"
+        />
+
+        <app-live-progress-card
+          [title]="operationCard().title"
+          [status]="operationCard().status"
+          [metaText]="operationCard().metaText"
+          [label]="operationCard().label"
+          [detailText]="operationCard().detailText"
+          [progress]="operationCard().progress"
+          [isEmpty]="operationCard().isEmpty"
+        />
+      </div>
+    </section>
+  } @else if (!store.currentMachineId()) {
+    <section class="live-page__state">
+      <p>Seleziona una macchina per visualizzare lo stato Live.</p>
+    </section>
+  }
+</main>
