@@ -12,6 +12,8 @@ public sealed class ProductionLotRecord
 
     public ProductionLotStatus Status { get; set; }
 
+    public ProductionLotExecutionMode ExecutionMode { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? StartedAt { get; set; }

@@ -51,6 +51,7 @@ public sealed class PostgresProductionLotRepository : IProductionLotRepository
         }
 
         record.Status = productionLot.Status;
+        record.ExecutionMode = productionLot.ExecutionMode;
         record.StartedAt = productionLot.StartedAt;
         record.CompletedAt = productionLot.CompletedAt;
 
@@ -65,6 +66,7 @@ public sealed class PostgresProductionLotRepository : IProductionLotRepository
             Code = productionLot.Code,
             PlannedQuantity = productionLot.PlannedQuantity,
             Status = productionLot.Status,
+            ExecutionMode = productionLot.ExecutionMode,
             CreatedAt = productionLot.CreatedAt,
             StartedAt = productionLot.StartedAt,
             CompletedAt = productionLot.CompletedAt,
@@ -78,6 +80,7 @@ public sealed class PostgresProductionLotRepository : IProductionLotRepository
             code: record.Code,
             plannedQuantity: record.PlannedQuantity,
             status: record.Status,
+            executionMode: record.ExecutionMode,
             createdAt: record.CreatedAt,
             startedAt: record.StartedAt,
             completedAt: record.CompletedAt

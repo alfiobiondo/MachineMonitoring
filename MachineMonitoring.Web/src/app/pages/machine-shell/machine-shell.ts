@@ -41,6 +41,8 @@ export class MachineShell {
       machine: snapshot.machine,
       runtimeVersion: snapshot.runtimeVersion,
       activeAlarms: snapshot.activeAlarms,
+      activeWarnings: this.snapshotStore.activeWarnings(),
+      notifications: this.snapshotStore.notifications(),
       snapshotAt: snapshot.snapshotAt,
     };
   });

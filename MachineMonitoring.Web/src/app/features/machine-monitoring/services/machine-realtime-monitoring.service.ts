@@ -3,6 +3,7 @@ import { DestroyRef, inject, Injectable } from '@angular/core';
 import { SignalrConnectionService } from '../../../core/realtime/signalr-connection.service';
 import {
   MachineAlarmChangedEvent,
+  MachineOperationChangedEvent,
   MachineRuntimeChangedEvent,
 } from '../models/machine-realtime-event.model';
 import { MachineSnapshotStore } from '../state/machine-snapshot.store';
@@ -29,6 +30,14 @@ export class MachineRealtimeMonitoringService {
         console.info('SignalR machineRuntimeChanged received.', event);
 
         this.snapshotStore.applyRuntimeChanged(event);
+      }),
+    );
+
+    this.removeListeners.push(
+      this.connection.on<MachineOperationChangedEvent>('machineOperationChanged', (event) => {
+        console.info('SignalR machineOperationChanged received.', event);
+
+        this.snapshotStore.applyOperationChanged(event);
       }),
     );
 

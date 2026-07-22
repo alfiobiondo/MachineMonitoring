@@ -51,8 +51,6 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddHostedService<OutboxProcessingBackgroundService>();
-
         services
             .AddHealthChecks()
             .AddCheck<PostgreSqlHealthCheck>(

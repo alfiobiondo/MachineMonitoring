@@ -18,6 +18,8 @@ describe('AppHeader', () => {
       },
       runtimeVersion: 7,
       activeAlarms: [],
+      activeWarnings: [],
+      notifications: [],
       snapshotAt: '2026-07-21T08:32:00Z',
     });
     fixture.componentRef.setInput('refreshing', true);
@@ -30,7 +32,20 @@ describe('AppHeader', () => {
       'MachineMonitoring',
     );
     expect(element.textContent).toContain('Snapshot HTTP');
-    expect(element.textContent).toContain('Aggiornamento snapshot');
-    expect(element.textContent).toContain('0 attivi');
+    expect(element.textContent).toContain('Aggiornamento');
+    expect(element.textContent).toContain('Allarmi');
+    expect(element.textContent).toContain('Warning');
+    expect(element.querySelector('app-header-notifications')).not.toBeNull();
+    expect(element.querySelector(['app', 'header', 'alarms'].join('-'))).toBeNull();
+
+    const machineChip = element.querySelector('.machine-status__badge') as HTMLElement;
+    const runtimeChip = element.querySelector('.runtime-summary__refresh') as HTMLElement;
+    const machineChipStyle = getComputedStyle(machineChip);
+    const runtimeChipStyle = getComputedStyle(runtimeChip);
+
+    expect(machineChipStyle.minHeight).toBe(runtimeChipStyle.minHeight);
+    expect(machineChipStyle.fontSize).toBe(runtimeChipStyle.fontSize);
+    expect(machineChipStyle.fontWeight).toBe(runtimeChipStyle.fontWeight);
+    expect(machineChipStyle.lineHeight).toBe(runtimeChipStyle.lineHeight);
   });
 });

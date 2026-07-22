@@ -1,11 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import {
-  provideRouter,
-  Router,
-  RouterOutlet,
-  withComponentInputBinding,
-} from '@angular/router';
+import { provideRouter, Router, RouterOutlet, withComponentInputBinding } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
@@ -13,7 +8,13 @@ import { vi } from 'vitest';
 import { MachineSnapshotApi } from '../../features/machine-monitoring/api/machine-snapshot.api';
 import { MachineSnapshot } from '../../features/machine-monitoring/models/machine-snapshot.model';
 import { MACHINE_SNAPSHOT_POLLING_INTERVAL_MS } from '../../features/machine-monitoring/services/machine-snapshot-monitoring.service';
+import { MachineRealtimeMonitoringService } from '../../features/machine-monitoring/services/machine-realtime-monitoring.service';
+
 import { MachineShell } from './machine-shell';
+
+class MachineRealtimeMonitoringServiceStub {
+  monitor(_machineId: string): void {}
+}
 
 describe('MachineShell', () => {
   @Component({
@@ -56,6 +57,7 @@ describe('MachineShell', () => {
     currentWorkpiece: null,
     currentOperation: null,
     activeAlarms: [],
+    warnings: [],
     snapshotAt: '2026-07-21T08:32:00Z',
   };
 
@@ -91,7 +93,23 @@ describe('MachineShell', () => {
           useValue: api,
         },
       ],
-    }).compileComponents();
+    });
+
+    TestBed.overrideComponent(MachineShell, {
+      remove: {
+        providers: [MachineRealtimeMonitoringService],
+      },
+      add: {
+        providers: [
+          {
+            provide: MachineRealtimeMonitoringService,
+            useClass: MachineRealtimeMonitoringServiceStub,
+          },
+        ],
+      },
+    });
+
+    await TestBed.compileComponents();
 
     fixture = TestBed.createComponent(TestRoot);
   });
@@ -153,9 +171,7 @@ describe('MachineShell', () => {
     fixture.detectChanges();
 
     expect(
-      setIntervalSpy.mock.calls.filter(
-        (call) => call[1] === MACHINE_SNAPSHOT_POLLING_INTERVAL_MS,
-      ),
+      setIntervalSpy.mock.calls.filter((call) => call[1] === MACHINE_SNAPSHOT_POLLING_INTERVAL_MS),
     ).toHaveLength(1);
 
     pollingCallback();
@@ -174,9 +190,7 @@ describe('MachineShell', () => {
       },
     };
 
-    api.getByMachineId
-      .mockReturnValueOnce(of(snapshot))
-      .mockReturnValueOnce(of(machine2Snapshot));
+    api.getByMachineId.mockReturnValueOnce(of(snapshot)).mockReturnValueOnce(of(machine2Snapshot));
 
     await fixture.componentInstance.router.navigateByUrl('/machines/M-001/live');
     fixture.detectChanges();

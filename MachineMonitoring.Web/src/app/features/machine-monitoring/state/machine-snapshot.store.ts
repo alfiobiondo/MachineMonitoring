@@ -3,8 +3,14 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 
 import { MachineSnapshotApi } from '../api/machine-snapshot.api';
-import { MachineSnapshot, MachineSnapshotAlarm } from '../models/machine-snapshot.model';
 import {
+  MachineNotificationItem,
+  MachineSnapshot,
+  MachineSnapshotAlarm,
+  MachineSnapshotWarning,
+} from '../models/machine-snapshot.model';
+import {
+  MachineOperationChangedEvent,
   MachineAlarmChangedEvent,
   MachineRuntimeChangedEvent,
 } from '../models/machine-realtime-event.model';
@@ -36,11 +42,50 @@ export class MachineSnapshotStore {
   readonly activeAlarms = computed<readonly MachineSnapshotAlarm[]>(
     () => this.snapshotState()?.activeAlarms ?? [],
   );
+  readonly activeWarnings = computed<readonly MachineSnapshotWarning[]>(() =>
+    (this.snapshotState()?.warnings ?? []).filter((warning) => warning.isActive),
+  );
   readonly activeAlarmCount = computed(() => this.activeAlarms().length);
+  readonly activeWarningCount = computed(() => this.activeWarnings().length);
   readonly blockingAlarms = computed(() => this.activeAlarms().filter((alarm) => alarm.isBlocking));
   readonly blockingAlarmCount = computed(() => this.blockingAlarms().length);
   readonly hasActiveAlarms = computed(() => this.activeAlarmCount() > 0);
+  readonly hasActiveWarnings = computed(() => this.activeWarningCount() > 0);
   readonly hasBlockingAlarms = computed(() => this.blockingAlarmCount() > 0);
+  readonly notifications = computed<readonly MachineNotificationItem[]>(() => {
+    const snapshot = this.snapshotState();
+
+    if (snapshot === null) {
+      return [];
+    }
+
+    return [
+      ...snapshot.activeAlarms.map<MachineNotificationItem>((alarm) => ({
+        id: `alarm:${alarm.id}`,
+        machineId: snapshot.machine.id,
+        kind: 'alarm',
+        severity: alarm.severity,
+        title: alarm.code,
+        message: alarm.message,
+        timestamp: alarm.raisedAt,
+        isActive: true,
+        sourceId: alarm.id,
+      })),
+      ...snapshot.warnings
+        .filter((warning) => warning.isActive)
+        .map<MachineNotificationItem>((warning) => ({
+          id: `warning:${warning.id}`,
+          machineId: warning.machineId,
+          kind: 'warning',
+          severity: warning.severity,
+          title: warning.title,
+          message: warning.message,
+          timestamp: warning.detectedAt,
+          isActive: warning.isActive,
+          sourceId: warning.sourceId ?? warning.id,
+        })),
+    ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  });
   readonly machineStatusLabel = computed(
     () => this.snapshotState()?.machine.status ?? 'Non inizializzato',
   );
@@ -184,6 +229,37 @@ export class MachineSnapshotStore {
     });
   }
 
+  applyOperationChanged(event: MachineOperationChangedEvent): void {
+    const currentMachineId = this.currentMachineIdState();
+    const currentSnapshot = this.snapshotState();
+
+    if (currentMachineId !== event.machineId || currentSnapshot === null) {
+      return;
+    }
+
+    const currentOperation = currentSnapshot.currentOperation;
+
+    if (currentOperation === null || currentOperation.id !== event.operationId) {
+      this.load(event.machineId, {
+        force: true,
+        silent: true,
+      });
+
+      return;
+    }
+
+    this.snapshotState.set({
+      ...currentSnapshot,
+      currentOperation: {
+        ...currentOperation,
+        status: event.status,
+        progressPercentage: event.progressPercentage,
+        currentPhase: event.currentPhase,
+        startedAt: event.startedAt,
+      },
+    });
+  }
+
   destroy(): void {
     this.cancelActiveRequest();
     this.requestVersion++;
@@ -240,6 +316,7 @@ export class MachineSnapshotStore {
       machine: currentSnapshot.machine,
       runtimeVersion: currentSnapshot.runtimeVersion,
       activeAlarms: currentSnapshot.activeAlarms,
+      warnings: currentSnapshot.warnings,
     };
   }
 }

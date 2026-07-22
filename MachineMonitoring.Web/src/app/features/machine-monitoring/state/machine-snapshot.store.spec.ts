@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { MachineSnapshotApi } from '../api/machine-snapshot.api';
 import { MachineSnapshot } from '../models/machine-snapshot.model';
 import { MachineSnapshotStore } from './machine-snapshot.store';
+import { MachineOperationChangedEvent } from '../models/machine-realtime-event.model';
 
 describe('MachineSnapshotStore', () => {
   let store: MachineSnapshotStore;
@@ -52,6 +53,7 @@ describe('MachineSnapshotStore', () => {
       startedAt: '2026-07-20T11:55:00Z',
     },
     activeAlarms: [],
+    warnings: [],
     snapshotAt: '2026-07-20T12:00:01Z',
   };
 
@@ -115,6 +117,21 @@ describe('MachineSnapshotStore', () => {
     expect(store.snapshot()).toEqual(snapshot);
   });
 
+  it('should expose an error when the initial request fails', () => {
+    const initialError = new HttpErrorResponse({
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+
+    api.getByMachineId.mockReturnValue(throwError(() => initialError));
+
+    store.load('M-001');
+
+    expect(store.snapshot()).toBeNull();
+    expect(store.loading()).toBe(false);
+    expect(store.errorMessage()).toBe('Non è stato possibile caricare lo stato Live.');
+  });
+
   it('should keep the previous snapshot visible during a silent refresh', () => {
     const refreshRequest = new Subject<MachineSnapshot>();
 
@@ -174,9 +191,7 @@ describe('MachineSnapshotStore', () => {
       };
     });
 
-    api.getByMachineId
-      .mockReturnValueOnce(firstRequest)
-      .mockReturnValueOnce(of(machine2Snapshot));
+    api.getByMachineId.mockReturnValueOnce(firstRequest).mockReturnValueOnce(of(machine2Snapshot));
 
     store.load('M-001');
     store.load('M-002');
@@ -242,6 +257,56 @@ describe('MachineSnapshotStore', () => {
     expect(store.machineStatusLabel()).toBe('Running');
   });
 
+  it('should expose active warnings and a unified notification timeline sorted by timestamp', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'alarm-1',
+            code: 'AL-001',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door interlock is open.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T11:59:00Z',
+          },
+        ],
+        warnings: [
+          {
+            id: 'M-001:OrphanRunningOperation:operation-2',
+            machineId: 'M-001',
+            code: 'OrphanRunningOperation',
+            severity: 'Warning',
+            title: 'Operation running non assegnata',
+            message: 'Operation operation-2 running non allineata.',
+            detectedAt: '2026-07-20T12:01:00Z',
+            resolvedAt: null,
+            isActive: true,
+            sourceId: 'operation-2',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.hasActiveWarnings()).toBe(true);
+    expect(store.activeWarningCount()).toBe(1);
+    expect(store.notifications()).toEqual([
+      expect.objectContaining({
+        kind: 'warning',
+        title: 'Operation running non assegnata',
+        timestamp: '2026-07-20T12:01:00Z',
+      }),
+      expect.objectContaining({
+        kind: 'alarm',
+        title: 'AL-001',
+        timestamp: '2026-07-20T11:59:00Z',
+      }),
+    ]);
+  });
+
   it('should clear active work on destroy without clearing the visible snapshot', () => {
     api.getByMachineId.mockReturnValue(of(snapshot));
 
@@ -252,5 +317,128 @@ describe('MachineSnapshotStore', () => {
     expect(store.loading()).toBe(false);
     expect(store.refreshing()).toBe(false);
     expect(store.snapshot()).toEqual(snapshot);
+  });
+
+  it('should apply a realtime change to the current operation', () => {
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+
+    const event: MachineOperationChangedEvent = {
+      eventId: 'event-1',
+      changeKind: 'progress',
+      operationId: 'operation-1',
+      workpieceId: 'workpiece-1',
+      machineId: 'M-001',
+      sequenceNumber: 2,
+      type: 'LaserCutting',
+      status: 'Running',
+      progressPercentage: 80,
+      currentPhase: 'Finishing',
+      failureReason: null,
+      createdAt: '2026-07-20T11:50:00Z',
+      startedAt: '2026-07-20T11:55:00Z',
+      completedAt: null,
+      occurredAt: '2026-07-20T12:00:02Z',
+    };
+
+    store.applyOperationChanged(event);
+
+    expect(store.snapshot()?.currentOperation).toEqual(
+      expect.objectContaining({
+        id: 'operation-1',
+        status: 'Running',
+        progressPercentage: 80,
+        currentPhase: 'Finishing',
+        startedAt: '2026-07-20T11:55:00Z',
+      }),
+    );
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+  });
+
+  it('should ignore an operation change for another machine', () => {
+    api.getByMachineId.mockReturnValue(of(snapshot));
+
+    store.load('M-001');
+
+    const event: MachineOperationChangedEvent = {
+      eventId: 'event-2',
+      changeKind: 'progress',
+      operationId: 'operation-1',
+      workpieceId: 'workpiece-1',
+      machineId: 'M-002',
+      sequenceNumber: 2,
+      type: 'LaserCutting',
+      status: 'Running',
+      progressPercentage: 90,
+      currentPhase: 'Finishing',
+      failureReason: null,
+      createdAt: '2026-07-20T11:50:00Z',
+      startedAt: '2026-07-20T11:55:00Z',
+      completedAt: null,
+      occurredAt: '2026-07-20T12:00:03Z',
+    };
+
+    store.applyOperationChanged(event);
+
+    expect(store.snapshot()?.currentOperation).toEqual(snapshot.currentOperation);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(1);
+  });
+
+  it('should silently reload the snapshot when another operation changes', () => {
+    const refreshRequest = new Subject<MachineSnapshot>();
+
+    api.getByMachineId
+      .mockReturnValueOnce(of(snapshot))
+      .mockReturnValueOnce(refreshRequest.asObservable());
+
+    store.load('M-001');
+
+    const event: MachineOperationChangedEvent = {
+      eventId: 'event-3',
+      changeKind: 'status',
+      operationId: 'operation-2',
+      workpieceId: 'workpiece-1',
+      machineId: 'M-001',
+      sequenceNumber: 3,
+      type: 'Drilling',
+      status: 'Running',
+      progressPercentage: 0,
+      currentPhase: 'Preparing',
+      failureReason: null,
+      createdAt: '2026-07-20T12:00:00Z',
+      startedAt: '2026-07-20T12:01:00Z',
+      completedAt: null,
+      occurredAt: '2026-07-20T12:01:01Z',
+    };
+
+    store.applyOperationChanged(event);
+
+    expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+    expect(api.getByMachineId).toHaveBeenLastCalledWith('M-001');
+    expect(store.snapshot()).toEqual(snapshot);
+    expect(store.refreshing()).toBe(true);
+
+    refreshRequest.next({
+      ...snapshot,
+      currentOperation: {
+        id: 'operation-2',
+        type: 'Drilling',
+        status: 'Running',
+        sequenceNumber: 3,
+        position: 3,
+        totalOperations: 4,
+        progressPercentage: 0,
+        currentPhase: 'Preparing',
+        startedAt: '2026-07-20T12:01:00Z',
+      },
+      snapshotAt: '2026-07-20T12:01:02Z',
+    });
+    refreshRequest.complete();
+
+    expect(store.refreshing()).toBe(false);
+    expect(store.snapshot()?.currentOperation?.id).toBe('operation-2');
   });
 });

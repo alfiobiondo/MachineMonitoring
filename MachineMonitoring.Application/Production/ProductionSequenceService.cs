@@ -12,6 +12,7 @@ public sealed class ProductionSequenceService
     private readonly IWorkpieceRepository _workpieceRepository;
     private readonly IMachineOperationRepository _machineOperationRepository;
     private readonly IMachineOperationEventRepository _machineOperationEventRepository;
+    private readonly MachineOperationStartCoordinator _operationStartCoordinator;
     private readonly IProductionTransactionManager _transactionManager;
     private readonly ILogger<ProductionSequenceService> _logger;
 
@@ -20,6 +21,7 @@ public sealed class ProductionSequenceService
         IWorkpieceRepository workpieceRepository,
         IMachineOperationRepository machineOperationRepository,
         IMachineOperationEventRepository machineOperationEventRepository,
+        MachineOperationStartCoordinator operationStartCoordinator,
         IProductionTransactionManager transactionManager,
         ILogger<ProductionSequenceService> logger
     )
@@ -28,6 +30,7 @@ public sealed class ProductionSequenceService
         ArgumentNullException.ThrowIfNull(workpieceRepository);
         ArgumentNullException.ThrowIfNull(machineOperationRepository);
         ArgumentNullException.ThrowIfNull(machineOperationEventRepository);
+        ArgumentNullException.ThrowIfNull(operationStartCoordinator);
         ArgumentNullException.ThrowIfNull(transactionManager);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -35,6 +38,7 @@ public sealed class ProductionSequenceService
         _workpieceRepository = workpieceRepository;
         _machineOperationRepository = machineOperationRepository;
         _machineOperationEventRepository = machineOperationEventRepository;
+        _operationStartCoordinator = operationStartCoordinator;
         _transactionManager = transactionManager;
         _logger = logger;
     }
@@ -62,7 +66,7 @@ public sealed class ProductionSequenceService
                     ct
                 );
 
-                productionLot.Start(DateTimeOffset.UtcNow);
+                productionLot.StartManual(DateTimeOffset.UtcNow);
                 await _productionLotRepository.UpdateAsync(productionLot, ct);
 
                 workpiece.StartSequence(DateTimeOffset.UtcNow);
@@ -116,48 +120,18 @@ public sealed class ProductionSequenceService
                 IReadOnlyCollection<Workpiece> workpieces =
                     await _workpieceRepository.GetByProductionLotIdAsync(productionLotId, ct);
 
-                if (
-                    startFromWorkpieceSequenceNumber is int requestedWorkpieceSequenceNumber
-                    && !workpieces.Any(item =>
-                        item.SequenceNumber == requestedWorkpieceSequenceNumber
-                    )
-                )
-                {
-                    throw new ResourceNotFoundException(
-                        "Workpiece sequence",
-                        $"{productionLotId}/{requestedWorkpieceSequenceNumber}"
-                    );
-                }
+                Workpiece? initialWorkpiece = FindInitialWorkpiece(
+                    productionLotId,
+                    workpieces,
+                    startFromWorkpieceSequenceNumber
+                );
 
-                productionLot.Start(DateTimeOffset.UtcNow);
+                productionLot.StartLotSequence(DateTimeOffset.UtcNow);
                 await _productionLotRepository.UpdateAsync(productionLot, ct);
 
-                foreach (Workpiece workpiece in workpieces.OrderBy(item => item.SequenceNumber))
+                if (initialWorkpiece is not null)
                 {
-                    if (
-                        workpiece.Status
-                        is WorkpieceStatus.Completed
-                            or WorkpieceStatus.Failed
-                            or WorkpieceStatus.Cancelled
-                            or WorkpieceStatus.Skipped
-                    )
-                    {
-                        continue;
-                    }
-
-                    if (
-                        startFromWorkpieceSequenceNumber is int selectedWorkpieceSequenceNumber
-                        && workpiece.SequenceNumber < selectedWorkpieceSequenceNumber
-                    )
-                    {
-                        await SkipPendingWorkpieceAsync(workpiece, ct);
-                        continue;
-                    }
-
-                    workpiece.StartSequence(DateTimeOffset.UtcNow);
-                    await _workpieceRepository.UpdateAsync(workpiece, ct);
-
-                    await TryStartFirstQueuedOperationAsync(workpiece, initialPhase, ct);
+                    await StartSingleWorkpieceSequenceAsync(initialWorkpiece, initialPhase, ct);
                 }
 
                 await UpdateProductionLotStatusAsync(productionLotId, ct);
@@ -192,12 +166,9 @@ public sealed class ProductionSequenceService
                 if (workpiece.IsSequenceActive && hasRemainingQueued)
                 {
                     await TryStartFirstQueuedOperationAsync(workpiece, initialPhase, ct);
+                    await UpdateProductionLotStatusAsync(workpiece.ProductionLotId, ct);
+                    return;
                 }
-
-                operations = await _machineOperationRepository.GetOrderedByWorkpieceIdAsync(
-                    workpiece.Id,
-                    ct
-                );
 
                 if (
                     operations.Count > 0
@@ -210,6 +181,27 @@ public sealed class ProductionSequenceService
                 {
                     workpiece.Complete(DateTimeOffset.UtcNow);
                     await _workpieceRepository.UpdateAsync(workpiece, ct);
+
+                    ProductionLot productionLot = await GetRequiredProductionLotAsync(
+                        workpiece.ProductionLotId,
+                        ct
+                    );
+
+                    if (productionLot.ExecutionMode == ProductionLotExecutionMode.LotSequence)
+                    {
+                        bool startedNextWorkpiece = await StartNextWorkpieceInLotSequenceAsync(
+                            productionLot,
+                            workpiece.SequenceNumber,
+                            initialPhase,
+                            ct
+                        );
+
+                        if (startedNextWorkpiece)
+                        {
+                            await UpdateProductionLotStatusAsync(workpiece.ProductionLotId, ct);
+                            return;
+                        }
+                    }
                 }
 
                 await UpdateProductionLotStatusAsync(workpiece.ProductionLotId, ct);
@@ -231,13 +223,17 @@ public sealed class ProductionSequenceService
                 MachineOperation operation = await GetRequiredOperationAsync(operationId, ct);
                 Workpiece workpiece = await GetRequiredWorkpieceAsync(operation.WorkpieceId, ct);
 
+                bool stopsLotSequence = false;
+
                 if (operation.Status == MachineOperationStatus.Failed)
                 {
                     workpiece.Fail(DateTimeOffset.UtcNow);
+                    stopsLotSequence = true;
                 }
                 else if (operation.Status == MachineOperationStatus.Cancelled)
                 {
                     workpiece.Cancel(DateTimeOffset.UtcNow);
+                    stopsLotSequence = true;
                 }
                 else if (operation.Status == MachineOperationStatus.Faulted)
                 {
@@ -256,6 +252,17 @@ public sealed class ProductionSequenceService
                 }
 
                 await _workpieceRepository.UpdateAsync(workpiece, ct);
+
+                if (stopsLotSequence)
+                {
+                    ProductionLot productionLot = await GetRequiredProductionLotAsync(
+                        workpiece.ProductionLotId,
+                        ct
+                    );
+                    productionLot.StopLotSequence();
+                    await _productionLotRepository.UpdateAsync(productionLot, ct);
+                }
+
                 await UpdateProductionLotStatusAsync(workpiece.ProductionLotId, ct);
             },
             cancellationToken
@@ -322,17 +329,11 @@ public sealed class ProductionSequenceService
         await EnsureOperationCanStartAsync(operationToStart, cancellationToken);
 
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
-        operationToStart.Start(startedAt, initialPhase);
-
-        await _machineOperationRepository.UpdateAsync(operationToStart, cancellationToken);
-        await AppendEventAsync(
+        await _operationStartCoordinator.StartAsync(
             operationToStart,
-            MachineOperationEventType.Started,
-            previousStatus: MachineOperationStatus.Queued,
-            newStatus: operationToStart.Status,
-            reason: null,
-            occurredAt: startedAt,
-            cancellationToken: cancellationToken
+            initialPhase,
+            startedAt,
+            cancellationToken
         );
 
         _logger.LogInformation(
@@ -340,6 +341,76 @@ public sealed class ProductionSequenceService
             operationToStart.Id,
             workpiece.Id
         );
+    }
+
+    private async Task StartSingleWorkpieceSequenceAsync(
+        Workpiece workpiece,
+        string initialPhase,
+        CancellationToken cancellationToken
+    )
+    {
+        workpiece.StartSequence(DateTimeOffset.UtcNow);
+        await _workpieceRepository.UpdateAsync(workpiece, cancellationToken);
+        await TryStartFirstQueuedOperationAsync(workpiece, initialPhase, cancellationToken);
+    }
+
+    private async Task<bool> StartNextWorkpieceInLotSequenceAsync(
+        ProductionLot productionLot,
+        int completedWorkpieceSequenceNumber,
+        string initialPhase,
+        CancellationToken cancellationToken
+    )
+    {
+        IReadOnlyCollection<Workpiece> workpieces =
+            await _workpieceRepository.GetByProductionLotIdAsync(
+                productionLot.Id,
+                cancellationToken
+            );
+
+        Workpiece? nextWorkpiece = workpieces
+            .Where(item => item.SequenceNumber > completedWorkpieceSequenceNumber)
+            .Where(item => !IsTerminal(item.Status))
+            .OrderBy(item => item.SequenceNumber)
+            .FirstOrDefault();
+
+        if (nextWorkpiece is null)
+        {
+            return false;
+        }
+
+        await StartSingleWorkpieceSequenceAsync(nextWorkpiece, initialPhase, cancellationToken);
+        return true;
+    }
+
+    private static Workpiece? FindInitialWorkpiece(
+        Guid productionLotId,
+        IReadOnlyCollection<Workpiece> workpieces,
+        int? startFromWorkpieceSequenceNumber
+    )
+    {
+        if (startFromWorkpieceSequenceNumber is int selectedSequenceNumber)
+        {
+            Workpiece targetWorkpiece =
+                workpieces.SingleOrDefault(item => item.SequenceNumber == selectedSequenceNumber)
+                ?? throw new ResourceNotFoundException(
+                    "Workpiece sequence",
+                    $"{productionLotId}/{selectedSequenceNumber}"
+                );
+
+            if (IsTerminal(targetWorkpiece.Status))
+            {
+                throw new BusinessRuleViolationException(
+                    $"Workpiece {targetWorkpiece.Id} cannot start from status {targetWorkpiece.Status}."
+                );
+            }
+
+            return targetWorkpiece;
+        }
+
+        return workpieces
+            .Where(item => !IsTerminal(item.Status))
+            .OrderBy(item => item.SequenceNumber)
+            .FirstOrDefault();
     }
 
     private async Task StartWorkpieceFromSequenceAsync(
@@ -404,16 +475,11 @@ public sealed class ProductionSequenceService
 
         await EnsureOperationCanStartAsync(targetOperation, cancellationToken);
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
-        targetOperation.Start(startedAt, initialPhase);
-        await _machineOperationRepository.UpdateAsync(targetOperation, cancellationToken);
-        await AppendEventAsync(
+        await _operationStartCoordinator.StartAsync(
             targetOperation,
-            MachineOperationEventType.Started,
-            previousStatus: MachineOperationStatus.Queued,
-            newStatus: targetOperation.Status,
-            reason: null,
-            occurredAt: startedAt,
-            cancellationToken: cancellationToken
+            initialPhase,
+            startedAt,
+            cancellationToken
         );
     }
 
@@ -550,9 +616,18 @@ public sealed class ProductionSequenceService
             )
         )
         {
-            productionLot.Start(DateTimeOffset.UtcNow);
+            productionLot.StartManual(DateTimeOffset.UtcNow);
             await _productionLotRepository.UpdateAsync(productionLot, cancellationToken);
         }
+    }
+
+    private static bool IsTerminal(WorkpieceStatus status)
+    {
+        return status
+            is WorkpieceStatus.Completed
+                or WorkpieceStatus.Failed
+                or WorkpieceStatus.Cancelled
+                or WorkpieceStatus.Skipped;
     }
 
     private async Task<MachineOperation> GetRequiredOperationAsync(

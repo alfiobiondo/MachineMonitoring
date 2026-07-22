@@ -29,6 +29,25 @@
     font-size: 0.92rem;
   }
 
+  &__production-context {
+    margin: -0.35rem 0 0;
+    color: #475569;
+    font-size: 0.95rem;
+    font-weight: 800;
+
+    &--active {
+      color: #0f766e;
+    }
+
+    &--paused {
+      color: #92400e;
+    }
+
+    &--faulted {
+      color: #b91c1c;
+    }
+  }
+
   &__progress-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

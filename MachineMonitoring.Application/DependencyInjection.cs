@@ -19,6 +19,8 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
 
         services.AddScoped<ProductionSequenceService>();
+        services.AddScoped<MachineOperationStartCoordinator>();
+        services.AddScoped<MachineRuntimeAssignedOperationQuery>();
         services.AddScoped<MachineOperationApplicationService>();
         services.AddScoped<MachineOperationEventApplicationService>();
         services.AddScoped<MachineAlarmApplicationService>();

@@ -8,55 +8,56 @@
       <h2>Errore</h2>
       <p>{{ error }}</p>
     </section>
-  } @else if (store.snapshot(); as liveSnapshot) {
+  } @else if (store.snapshot()) {
     <section class="live-page__content">
       <p class="live-page__machine-request">
         Macchina richiesta: {{ store.currentMachineId() }}
       </p>
 
-      @if (store.hasProductionContext()) {
-        <div class="live-page__progress-grid">
-          @if (liveSnapshot.productionLot; as lot) {
-            <app-live-progress-card
-              title="Lotto"
-              [label]="lot.code"
-              [status]="lot.status"
-              [progressPercentage]="lot.progressPercentage"
-              [details]="
-                lot.completedOperations + ' operazioni completate su ' + lot.totalOperations
-              "
-            />
-          }
+      <p
+        class="live-page__production-context"
+        [class.live-page__production-context--active]="productionContext().tone === 'active'"
+        [class.live-page__production-context--paused]="productionContext().tone === 'paused'"
+        [class.live-page__production-context--faulted]="productionContext().tone === 'faulted'"
+      >
+        {{ productionContext().text }}
+      </p>
 
-          @if (liveSnapshot.currentWorkpiece; as workpiece) {
-            <app-live-progress-card
-              title="Pezzo"
-              [label]="workpiece.code"
-              [status]="workpiece.status"
-              [progressPercentage]="workpiece.progressPercentage"
-              [details]="'Posizione ' + workpiece.position + ' di ' + workpiece.totalWorkpieces"
-            />
-          }
+      <div class="live-page__progress-grid">
+        <app-live-progress-card
+          [title]="lotCard().title"
+          [status]="lotCard().status"
+          [metaText]="lotCard().metaText"
+          [label]="lotCard().label"
+          [detailText]="lotCard().detailText"
+          [progress]="lotCard().progress"
+          [isEmpty]="lotCard().isEmpty"
+        />
 
-          @if (liveSnapshot.currentOperation; as operation) {
-            <app-live-progress-card
-              title="Operazione"
-              [label]="operation.type"
-              [status]="operation.status"
-              [progressPercentage]="operation.progressPercentage"
-              [details]="
-                operation.currentPhase ??
-                'Posizione ' + operation.position + ' di ' + operation.totalOperations
-              "
-            />
-          }
-        </div>
-      } @else {
-        <section class="live-page__empty">
-          <h2>Nessuna lavorazione corrente</h2>
-          <p>La macchina non ha un lotto, un pezzo e una lavorazione correnti.</p>
-        </section>
-      }
+        <app-live-progress-card
+          [title]="workpieceCard().title"
+          [status]="workpieceCard().status"
+          [metaText]="workpieceCard().metaText"
+          [label]="workpieceCard().label"
+          [detailText]="workpieceCard().detailText"
+          [progress]="workpieceCard().progress"
+          [isEmpty]="workpieceCard().isEmpty"
+        />
+
+        <app-live-progress-card
+          [title]="operationCard().title"
+          [status]="operationCard().status"
+          [metaText]="operationCard().metaText"
+          [label]="operationCard().label"
+          [detailText]="operationCard().detailText"
+          [progress]="operationCard().progress"
+          [isEmpty]="operationCard().isEmpty"
+        />
+      </div>
+    </section>
+  } @else if (!store.currentMachineId()) {
+    <section class="live-page__state">
+      <p>Seleziona una macchina per visualizzare lo stato Live.</p>
     </section>
   }
 </main>

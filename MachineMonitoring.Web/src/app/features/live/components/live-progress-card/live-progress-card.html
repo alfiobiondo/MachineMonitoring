@@ -1,36 +1,48 @@
 <article class="progress-card">
   <header class="progress-card__header">
-    <div>
-      <p class="progress-card__title">{{ title() }}</p>
-      <h2 class="progress-card__label">{{ label() }}</h2>
-    </div>
+    <p class="progress-card__title">{{ title() }}</p>
 
     <span class="progress-card__status">
       {{ status() }}
     </span>
   </header>
 
-  <div class="progress-card__value">
-    <strong>{{ normalizedProgress() }}%</strong>
+  <div class="progress-card__meta-row">
+    @if (metaText(); as currentMetaText) {
+      <span>{{ currentMetaText }}</span>
+    }
   </div>
 
-  <div
-    class="progress-card__track"
-    role="progressbar"
-    [attr.aria-label]="title() + ': ' + label()"
-    [attr.aria-valuenow]="normalizedProgress()"
-    aria-valuemin="0"
-    aria-valuemax="100"
-  >
-    <div
-      class="progress-card__bar"
-      [style.width.%]="normalizedProgress()"
-    ></div>
+  <div class="progress-card__label">
+    {{ label() }}
   </div>
 
-  @if (details(); as detailText) {
-    <p class="progress-card__details">
-      {{ detailText }}
-    </p>
-  }
+  <div class="progress-card__progress-area">
+    @if (showProgress()) {
+      <div class="progress-card__detail-progress-row">
+        @if (detailText(); as currentDetailText) {
+          <p class="progress-card__details">
+            {{ currentDetailText }}
+          </p>
+        } @else {
+          <span aria-hidden="true"></span>
+        }
+
+        <strong class="progress-card__value">{{ normalizedProgress() }}%</strong>
+      </div>
+
+      <div
+        class="progress-card__track"
+        role="progressbar"
+        [attr.aria-label]="title() + ': ' + label()"
+        [attr.aria-valuenow]="normalizedProgress()"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <div class="progress-card__bar" [style.width.%]="normalizedProgress()"></div>
+      </div>
+    } @else {
+      <div class="progress-card__progress-spacer" aria-hidden="true"></div>
+    }
+  </div>
 </article>

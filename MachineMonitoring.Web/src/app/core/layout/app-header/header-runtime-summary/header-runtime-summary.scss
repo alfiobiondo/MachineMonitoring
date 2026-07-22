@@ -1,24 +1,25 @@
-.runtime-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: start;
-  min-width: 0;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 0.9rem 1rem;
-  border: 1px solid rgb(12 74 110 / 0.12);
-  border-radius: 0.9rem;
-  background: rgb(255 255 255 / 0.62);
-  box-shadow: 0 0.75rem 1.75rem rgb(15 23 42 / 0.05);
+@use '../header-card' as header;
 
-  &__body {
-    display: grid;
+.runtime-summary {
+  @include header.card-shell;
+
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  background: rgb(255 255 255 / 0.62);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     min-width: 0;
-    gap: 0.3rem;
+    gap: 0.75rem;
   }
 
-  &__eyebrow,
+  &__title {
+    @include header.card-title;
+  }
+
   &__meta {
     color: #64748b;
     font-size: 0.78rem;
@@ -31,10 +32,11 @@
     }
   }
 
-  &__eyebrow {
-    display: block;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+  &__content {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    gap: 0.3rem;
   }
 
   strong {
@@ -43,16 +45,11 @@
   }
 
   &__refresh {
-    min-height: 1.6rem;
-    justify-self: end;
-    align-self: start;
-    align-content: center;
-    padding: 0.24rem 0.55rem;
-    border-radius: 999px;
+    @include header.header-chip;
+
+    flex: 0 0 auto;
     color: #64748b;
     background: rgb(100 116 139 / 0.1);
-    font-size: 0.78rem;
-    font-weight: 800;
 
     &--active {
       color: #92400e;

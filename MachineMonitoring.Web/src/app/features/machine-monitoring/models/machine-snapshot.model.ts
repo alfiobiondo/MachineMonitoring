@@ -5,6 +5,7 @@ export interface MachineSnapshot {
   currentWorkpiece: MachineSnapshotWorkpiece | null;
   currentOperation: MachineSnapshotOperation | null;
   activeAlarms: readonly MachineSnapshotAlarm[];
+  warnings: readonly MachineSnapshotWarning[];
   snapshotAt: string;
 }
 
@@ -56,4 +57,31 @@ export interface MachineSnapshotAlarm {
   message: string;
   isBlocking: boolean;
   raisedAt: string;
+}
+
+export interface MachineSnapshotWarning {
+  id: string;
+  machineId: string;
+  code: string;
+  severity: string;
+  title: string;
+  message: string;
+  detectedAt: string;
+  resolvedAt: string | null;
+  isActive: boolean;
+  sourceId: string | null;
+}
+
+export type MachineNotificationKind = 'alarm' | 'warning';
+
+export interface MachineNotificationItem {
+  id: string;
+  machineId: string;
+  kind: MachineNotificationKind;
+  severity: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  isActive: boolean;
+  sourceId: string;
 }

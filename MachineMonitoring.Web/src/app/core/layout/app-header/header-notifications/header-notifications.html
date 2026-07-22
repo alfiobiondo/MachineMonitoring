@@ -1,0 +1,77 @@
+<section
+  class="header-notifications"
+  [class.header-notifications--blocking]="hasBlockingAlarms()"
+  [class.header-notifications--warning]="hasWarnings()"
+  aria-label="Segnalazioni macchina"
+>
+  <button
+    class="header-notifications__button"
+    type="button"
+    [attr.aria-expanded]="expanded()"
+    [attr.aria-controls]="panelId"
+    [attr.aria-label]="toggleLabel()"
+    (click)="toggle()"
+  >
+    <header class="header-notifications__header">
+      <p class="header-notifications__title">Segnalazioni</p>
+      <span class="header-notifications__chevron" aria-hidden="true"></span>
+    </header>
+
+    <div class="header-notifications__content">
+      <div class="header-notifications__summary-row">
+        <span
+          class="header-notifications__summary-icon header-notifications__summary-icon--alarm"
+          aria-hidden="true"
+        ></span>
+        <span class="header-notifications__summary-label">Allarmi</span>
+        <span class="header-notifications__count">{{ alarmCount() }}</span>
+      </div>
+
+      <div class="header-notifications__summary-row">
+        <span
+          class="header-notifications__summary-icon header-notifications__summary-icon--warning"
+          aria-hidden="true"
+        ></span>
+        <span class="header-notifications__summary-label">Warning</span>
+        <span class="header-notifications__count">{{ warningCount() }}</span>
+      </div>
+    </div>
+  </button>
+
+  @if (expanded()) {
+    <div
+      class="header-notifications__panel"
+      [id]="panelId"
+    >
+      @if (hasNotifications()) {
+        @for (notification of notifications(); track notification.id) {
+          <article
+            class="header-notifications__item"
+            [class.header-notifications__item--alarm]="notification.kind === 'alarm'"
+            [class.header-notifications__item--warning]="notification.kind === 'warning'"
+          >
+            <span class="header-notifications__icon" aria-hidden="true">
+              {{ notification.kind === 'alarm' ? '!' : 'W' }}
+            </span>
+
+            <div class="header-notifications__item-body">
+              <header class="header-notifications__item-header">
+                <span class="header-notifications__code">{{ notification.title }}</span>
+                <strong>{{ notification.severity }}</strong>
+              </header>
+
+              <p>{{ notification.message }}</p>
+
+              <span class="header-notifications__timestamp">
+                {{ notification.kind === 'alarm' ? 'Allarme' : 'Warning' }}
+                · {{ notification.timestamp | date: 'dd/MM/yyyy HH:mm:ss' }}
+              </span>
+            </div>
+          </article>
+        }
+      } @else {
+        <p class="header-notifications__empty">Nessuna segnalazione attiva.</p>
+      }
+    </div>
+  }
+</section>

@@ -52,6 +52,8 @@ builder.Services.AddSignalR();
 
 builder.Services.AddScoped<IOutboxMessageDispatcher, SignalROutboxMessageDispatcher>();
 
+builder.Services.AddHostedService<OutboxProcessingBackgroundService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(
@@ -1326,6 +1328,20 @@ static LiveSnapshotResponse CreateLiveSnapshotResponse(LiveSnapshotResult result
                 Message: alarm.Message,
                 IsBlocking: alarm.IsBlocking,
                 RaisedAt: alarm.RaisedAt
+            ))
+            .ToArray(),
+        Warnings: result
+            .Warnings.Select(warning => new LiveSnapshotWarningResponse(
+                Id: warning.Id,
+                MachineId: warning.MachineId,
+                Code: warning.Code,
+                Severity: warning.Severity,
+                Title: warning.Title,
+                Message: warning.Message,
+                DetectedAt: warning.DetectedAt,
+                ResolvedAt: warning.ResolvedAt,
+                IsActive: warning.IsActive,
+                SourceId: warning.SourceId
             ))
             .ToArray(),
         SnapshotAt: result.SnapshotAt

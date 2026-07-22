@@ -1,6 +1,15 @@
 <section class="runtime-summary" aria-label="Runtime sintetico">
-  <div class="runtime-summary__body">
-    <span class="runtime-summary__eyebrow">Runtime</span>
+  <header class="runtime-summary__header">
+    <p class="runtime-summary__title">Runtime</p>
+    <span
+      class="runtime-summary__refresh"
+      [class.runtime-summary__refresh--active]="refreshing()"
+    >
+      {{ refreshing() ? 'Aggiornamento' : 'Stabile' }}
+    </span>
+  </header>
+
+  <div class="runtime-summary__content">
     <strong>Snapshot HTTP</strong>
 
     @if (context(); as currentContext) {
@@ -13,11 +22,4 @@
       <span class="runtime-summary__meta">Versione n/d</span>
     }
   </div>
-
-  <span
-    class="runtime-summary__refresh"
-    [class.runtime-summary__refresh--active]="refreshing()"
-  >
-    {{ refreshing() ? 'Aggiornamento snapshot' : 'Snapshot stabile' }}
-  </span>
 </section>

@@ -29,3 +29,23 @@ export interface MachineRuntimeChangedEvent {
   version: number;
   occurredAt: string;
 }
+
+export type MachineOperationChangeKind = 'status' | 'progress';
+
+export interface MachineOperationChangedEvent {
+  eventId: string;
+  changeKind: MachineOperationChangeKind;
+  operationId: string;
+  workpieceId: string;
+  machineId: string;
+  sequenceNumber: number;
+  type: string;
+  status: string;
+  progressPercentage: number;
+  currentPhase: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  occurredAt: string;
+}

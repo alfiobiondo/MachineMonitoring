@@ -1,13 +1,13 @@
 import { Component, input } from '@angular/core';
 
 import { AppHeaderContext } from '../models/app-header-context.model';
-import { HeaderAlarms } from './header-alarms/header-alarms';
 import { HeaderMachineStatus } from './header-machine-status/header-machine-status';
+import { HeaderNotifications } from './header-notifications/header-notifications';
 import { HeaderRuntimeSummary } from './header-runtime-summary/header-runtime-summary';
 
 @Component({
   selector: 'app-header',
-  imports: [HeaderAlarms, HeaderMachineStatus, HeaderRuntimeSummary],
+  imports: [HeaderMachineStatus, HeaderNotifications, HeaderRuntimeSummary],
   templateUrl: './app-header.html',
   styleUrl: './app-header.scss',
 })

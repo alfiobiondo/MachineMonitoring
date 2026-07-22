@@ -12,6 +12,8 @@ public sealed class ProductionLot
 
     public ProductionLotStatus Status { get; private set; }
 
+    public ProductionLotExecutionMode ExecutionMode { get; private set; }
+
     public DateTimeOffset CreatedAt { get; }
 
     public DateTimeOffset? StartedAt { get; private set; }
@@ -40,9 +42,32 @@ public sealed class ProductionLot
         PlannedQuantity = plannedQuantity;
         CreatedAt = createdAt;
         Status = ProductionLotStatus.Planned;
+        ExecutionMode = ProductionLotExecutionMode.None;
     }
 
     public void Start(DateTimeOffset startedAt)
+    {
+        StartManual(startedAt);
+    }
+
+    public void StartManual(DateTimeOffset startedAt)
+    {
+        StartCore(startedAt);
+        ExecutionMode = ProductionLotExecutionMode.None;
+    }
+
+    public void StartLotSequence(DateTimeOffset startedAt)
+    {
+        StartCore(startedAt);
+        ExecutionMode = ProductionLotExecutionMode.LotSequence;
+    }
+
+    public void StopLotSequence()
+    {
+        ExecutionMode = ProductionLotExecutionMode.None;
+    }
+
+    private void StartCore(DateTimeOffset startedAt)
     {
         if (Status is ProductionLotStatus.Completed or ProductionLotStatus.Cancelled or ProductionLotStatus.Failed)
         {
@@ -69,6 +94,7 @@ public sealed class ProductionLot
         }
 
         Status = ProductionLotStatus.Completed;
+        ExecutionMode = ProductionLotExecutionMode.None;
         CompletedAt = completedAt;
     }
 
@@ -82,6 +108,7 @@ public sealed class ProductionLot
         }
 
         Status = ProductionLotStatus.Failed;
+        ExecutionMode = ProductionLotExecutionMode.None;
         CompletedAt = failedAt;
     }
 
@@ -100,6 +127,7 @@ public sealed class ProductionLot
         }
 
         Status = ProductionLotStatus.Cancelled;
+        ExecutionMode = ProductionLotExecutionMode.None;
     }
 
     public static ProductionLot Restore(
@@ -107,6 +135,7 @@ public sealed class ProductionLot
         string code,
         int plannedQuantity,
         ProductionLotStatus status,
+        ProductionLotExecutionMode executionMode,
         DateTimeOffset createdAt,
         DateTimeOffset? startedAt,
         DateTimeOffset? completedAt
@@ -120,6 +149,7 @@ public sealed class ProductionLot
         );
 
         lot.Status = status;
+        lot.ExecutionMode = executionMode;
         lot.StartedAt = startedAt;
         lot.CompletedAt = completedAt;
 
