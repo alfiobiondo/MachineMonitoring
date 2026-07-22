@@ -60,6 +60,11 @@ builder
     )
     .ValidateOnStart();
 
+builder
+    .Services.AddOptions<MachineIncidentSimulatorOptions>()
+    .Bind(builder.Configuration.GetSection(MachineIncidentSimulatorOptions.SectionName))
+    .ValidateOnStart();
+
 builder.Services.AddMemoryCache();
 
 // Monitoraggio macchine
@@ -76,6 +81,15 @@ builder.Services.AddTransient<MachinePollingService>();
 builder.Services.AddHostedService<MachinePollingWorker>();
 
 builder.Services.AddHostedService<MachineOperationSimulatorWorker>();
+
+if (
+    builder.Configuration.GetValue<bool>(
+        $"{MachineIncidentSimulatorOptions.SectionName}:{nameof(MachineIncidentSimulatorOptions.Enabled)}"
+    )
+)
+{
+    builder.Services.AddHostedService<MachineIncidentSimulatorWorker>();
+}
 
 // Pipeline diagnostica:
 // cache → retry → limite concorrenza → servizio reale

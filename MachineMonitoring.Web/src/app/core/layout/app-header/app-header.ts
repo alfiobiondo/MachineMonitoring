@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 import { AppHeaderContext } from '../models/app-header-context.model';
 import { HeaderMachineStatus } from './header-machine-status/header-machine-status';
@@ -14,4 +14,5 @@ import { HeaderRuntimeSummary } from './header-runtime-summary/header-runtime-su
 export class AppHeader {
   readonly context = input<AppHeaderContext | null>(null);
   readonly refreshing = input(false);
+  readonly acknowledgeNotification = output<string>();
 }

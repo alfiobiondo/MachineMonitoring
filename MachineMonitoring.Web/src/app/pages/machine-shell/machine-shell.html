@@ -2,6 +2,7 @@
   <app-header
     [context]="headerContext()"
     [refreshing]="snapshotStore.refreshing()"
+    (acknowledgeNotification)="snapshotStore.acknowledgeAlarm($event)"
   />
 
   <main class="machine-shell__main">

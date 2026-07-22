@@ -45,10 +45,20 @@
     >
       @if (hasNotifications()) {
         @for (notification of notifications(); track notification.id) {
-          <article
+          <button
             class="header-notifications__item"
+            type="button"
             [class.header-notifications__item--alarm]="notification.kind === 'alarm'"
             [class.header-notifications__item--warning]="notification.kind === 'warning'"
+            [class.header-notifications__item--active]="notification.lifecycleStatus === 'Active'"
+            [class.header-notifications__item--acknowledged]="
+              notification.lifecycleStatus === 'Acknowledged'
+            "
+            [class.header-notifications__item--pending]="isAcknowledging(notification)"
+            [disabled]="isAcknowledging(notification)"
+            [attr.aria-label]="notificationLabel(notification)"
+            (click)="acknowledge(notification)"
+            (keydown)="handleNotificationKeydown($event, notification)"
           >
             <span class="header-notifications__icon" aria-hidden="true">
               {{ notification.kind === 'alarm' ? '!' : 'W' }}
@@ -62,12 +72,29 @@
 
               <p>{{ notification.message }}</p>
 
-              <span class="header-notifications__timestamp">
-                {{ notification.kind === 'alarm' ? 'Allarme' : 'Warning' }}
-                · {{ notification.timestamp | date: 'dd/MM/yyyy HH:mm:ss' }}
-              </span>
+              <footer class="header-notifications__meta">
+                <span class="header-notifications__details">
+                  {{ notification.kind === 'alarm' ? 'Allarme' : 'Warning' }}
+                  · {{ notification.timestamp | date: 'dd/MM/yyyy HH:mm:ss' }}
+                </span>
+                <span class="header-notifications__status">
+                  @if (isAcknowledging(notification)) {
+                    Riconoscimento...
+                  } @else {
+                    {{
+                      notification.lifecycleStatus === 'Acknowledged'
+                        ? 'Riconosciuto'
+                        : 'Da riconoscere'
+                    }}
+                  }
+                </span>
+              </footer>
             </div>
-          </article>
+          </button>
+        }
+
+        @if (alarmAcknowledgeError(); as errorMessage) {
+          <p class="header-notifications__error" role="status">{{ errorMessage }}</p>
         }
       } @else {
         <p class="header-notifications__empty">Nessuna segnalazione attiva.</p>

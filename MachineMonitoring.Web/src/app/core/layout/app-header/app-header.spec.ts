@@ -20,6 +20,8 @@ describe('AppHeader', () => {
       activeAlarms: [],
       activeWarnings: [],
       notifications: [],
+      acknowledgingAlarmIds: [],
+      alarmAcknowledgeError: null,
       snapshotAt: '2026-07-21T08:32:00Z',
     });
     fixture.componentRef.setInput('refreshing', true);

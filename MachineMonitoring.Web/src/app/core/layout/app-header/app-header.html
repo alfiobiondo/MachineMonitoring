@@ -6,5 +6,8 @@
     [context]="context()"
     [refreshing]="refreshing()"
   />
-  <app-header-notifications [context]="context()" />
+  <app-header-notifications
+    [context]="context()"
+    (acknowledgeNotification)="acknowledgeNotification.emit($event)"
+  />
 </header>

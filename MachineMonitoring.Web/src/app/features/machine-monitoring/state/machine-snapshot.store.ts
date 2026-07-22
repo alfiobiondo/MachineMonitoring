@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 
+import { MachineAlarmApi } from '../api/machine-alarm.api';
 import { MachineSnapshotApi } from '../api/machine-snapshot.api';
 import {
   MachineNotificationItem,
@@ -15,6 +16,9 @@ import {
   MachineRuntimeChangedEvent,
 } from '../models/machine-realtime-event.model';
 
+export const MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS = 250;
+export const MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS = 300;
+
 export interface MachineSnapshotLoadOptions {
   force?: boolean;
   silent?: boolean;
@@ -22,6 +26,7 @@ export interface MachineSnapshotLoadOptions {
 
 @Injectable()
 export class MachineSnapshotStore {
+  private readonly machineAlarmApi = inject(MachineAlarmApi);
   private readonly machineSnapshotApi = inject(MachineSnapshotApi);
 
   private readonly currentMachineIdState = signal<string | null>(null);
@@ -29,22 +34,46 @@ export class MachineSnapshotStore {
   private readonly loadingState = signal(false);
   private readonly refreshingState = signal(false);
   private readonly errorMessageState = signal<string | null>(null);
+  private readonly acknowledgingAlarmIdsState = signal<readonly string[]>([]);
+  private readonly alarmAcknowledgeErrorState = signal<string | null>(null);
 
   private activeRequest: Subscription | null = null;
   private activeRequestMachineId: string | null = null;
+  private readonly activeAcknowledgeRequests = new Map<string, Subscription>();
   private requestVersion = 0;
+  private silentRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly currentMachineId = this.currentMachineIdState.asReadonly();
   readonly snapshot = this.snapshotState.asReadonly();
   readonly loading = this.loadingState.asReadonly();
   readonly refreshing = this.refreshingState.asReadonly();
   readonly errorMessage = this.errorMessageState.asReadonly();
+  readonly acknowledgingAlarmIds = this.acknowledgingAlarmIdsState.asReadonly();
+  readonly alarmAcknowledgeError = this.alarmAcknowledgeErrorState.asReadonly();
   readonly activeAlarms = computed<readonly MachineSnapshotAlarm[]>(
-    () => this.snapshotState()?.activeAlarms ?? [],
+    () =>
+      (this.snapshotState()?.activeAlarms ?? []).filter(
+        (alarm) => alarm.isBlocking && isUnresolvedAlarm(alarm),
+      ),
   );
-  readonly activeWarnings = computed<readonly MachineSnapshotWarning[]>(() =>
-    (this.snapshotState()?.warnings ?? []).filter((warning) => warning.isActive),
-  );
+  readonly activeWarnings = computed<readonly MachineSnapshotWarning[]>(() => {
+    const snapshot = this.snapshotState();
+
+    if (snapshot === null) {
+      return [];
+    }
+
+    const alarmIds = new Set(snapshot.activeAlarms.map((alarm) => alarm.id));
+
+    return [
+      ...snapshot.warnings.filter(
+        (warning) => warning.isActive && !isDuplicateWarningForAlarm(warning, alarmIds),
+      ),
+      ...this.activeNonBlockingAlarms(snapshot).map((alarm) =>
+        this.createWarningFromNonBlockingAlarm(alarm, snapshot.machine.id),
+      ),
+    ];
+  });
   readonly activeAlarmCount = computed(() => this.activeAlarms().length);
   readonly activeWarningCount = computed(() => this.activeWarnings().length);
   readonly blockingAlarms = computed(() => this.activeAlarms().filter((alarm) => alarm.isBlocking));
@@ -60,31 +89,16 @@ export class MachineSnapshotStore {
     }
 
     return [
-      ...snapshot.activeAlarms.map<MachineNotificationItem>((alarm) => ({
-        id: `alarm:${alarm.id}`,
-        machineId: snapshot.machine.id,
-        kind: 'alarm',
-        severity: alarm.severity,
-        title: alarm.code,
-        message: alarm.message,
-        timestamp: alarm.raisedAt,
-        isActive: true,
-        sourceId: alarm.id,
-      })),
-      ...snapshot.warnings
-        .filter((warning) => warning.isActive)
-        .map<MachineNotificationItem>((warning) => ({
-          id: `warning:${warning.id}`,
-          machineId: warning.machineId,
-          kind: 'warning',
-          severity: warning.severity,
-          title: warning.title,
-          message: warning.message,
-          timestamp: warning.detectedAt,
-          isActive: warning.isActive,
-          sourceId: warning.sourceId ?? warning.id,
-        })),
-    ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+      ...this.activeAlarms().map((alarm) =>
+        this.createNotificationFromAlarm(alarm, snapshot.machine.id, 'alarm'),
+      ),
+      ...this.activeNonBlockingAlarms(snapshot).map((alarm) =>
+        this.createNotificationFromAlarm(alarm, snapshot.machine.id, 'warning'),
+      ),
+      ...this.activeWarnings()
+        .filter((warning) => !warning.id.startsWith('alarm:'))
+        .map((warning) => this.createNotificationFromWarning(warning)),
+    ].sort(compareNotifications);
   });
   readonly machineStatusLabel = computed(
     () => this.snapshotState()?.machine.status ?? 'Non inizializzato',
@@ -185,6 +199,7 @@ export class MachineSnapshotStore {
       message: event.message,
       isBlocking: event.isBlocking,
       raisedAt: event.raisedAt,
+      acknowledgedAt: event.acknowledgedAt,
     };
 
     const existingAlarmIndex = currentSnapshot.activeAlarms.findIndex(
@@ -202,6 +217,41 @@ export class MachineSnapshotStore {
       ...currentSnapshot,
       activeAlarms,
     });
+  }
+
+  acknowledgeAlarm(alarmId: string): void {
+    const currentSnapshot = this.snapshotState();
+    const alarm = currentSnapshot?.activeAlarms.find((currentAlarm) => currentAlarm.id === alarmId);
+
+    if (currentSnapshot === null || alarm === undefined || alarm.status !== 'Active') {
+      return;
+    }
+
+    if (this.activeAcknowledgeRequests.has(alarmId)) {
+      return;
+    }
+
+    this.alarmAcknowledgeErrorState.set(null);
+    this.addPendingAcknowledge(alarmId);
+
+    const request = this.machineAlarmApi.acknowledge(alarmId).subscribe({
+      next: () => {
+        this.markAlarmAcknowledged(alarmId);
+        this.clearPendingAcknowledge(alarmId);
+        this.activeAcknowledgeRequests.delete(alarmId);
+      },
+      error: () => {
+        this.alarmAcknowledgeErrorState.set(
+          'Non è stato possibile riconoscere la segnalazione.',
+        );
+        this.clearPendingAcknowledge(alarmId);
+        this.activeAcknowledgeRequests.delete(alarmId);
+      },
+    });
+
+    if (!request.closed) {
+      this.activeAcknowledgeRequests.set(alarmId, request);
+    }
   }
 
   applyRuntimeChanged(event: MachineRuntimeChangedEvent): void {
@@ -227,6 +277,10 @@ export class MachineSnapshotStore {
         lastChangedAt: event.lastChangedAt,
       },
     });
+
+    if (shouldRefreshAfterRuntimeStatus(event.status)) {
+      this.scheduleSilentRefresh();
+    }
   }
 
   applyOperationChanged(event: MachineOperationChangedEvent): void {
@@ -240,10 +294,7 @@ export class MachineSnapshotStore {
     const currentOperation = currentSnapshot.currentOperation;
 
     if (currentOperation === null || currentOperation.id !== event.operationId) {
-      this.load(event.machineId, {
-        force: true,
-        silent: true,
-      });
+      this.scheduleSilentRefresh();
 
       return;
     }
@@ -258,20 +309,185 @@ export class MachineSnapshotStore {
         startedAt: event.startedAt,
       },
     });
+
+    if (shouldRefreshAfterOperationStatus(event.status)) {
+      this.scheduleSilentRefresh();
+    } else if (event.changeKind === 'progress') {
+      this.scheduleProgressSilentRefresh();
+    }
   }
 
   destroy(): void {
     this.cancelActiveRequest();
+    this.cancelAcknowledgeRequests();
+    this.cancelScheduledSilentRefresh();
     this.requestVersion++;
     this.currentMachineIdState.set(null);
     this.loadingState.set(false);
     this.refreshingState.set(false);
+    this.acknowledgingAlarmIdsState.set([]);
   }
 
   private cancelActiveRequest(): void {
     this.activeRequest?.unsubscribe();
     this.activeRequest = null;
     this.activeRequestMachineId = null;
+  }
+
+  private cancelAcknowledgeRequests(): void {
+    for (const request of this.activeAcknowledgeRequests.values()) {
+      request.unsubscribe();
+    }
+
+    this.activeAcknowledgeRequests.clear();
+  }
+
+  private addPendingAcknowledge(alarmId: string): void {
+    this.acknowledgingAlarmIdsState.update((ids) =>
+      ids.includes(alarmId) ? ids : [...ids, alarmId],
+    );
+  }
+
+  private clearPendingAcknowledge(alarmId: string): void {
+    this.acknowledgingAlarmIdsState.update((ids) => ids.filter((id) => id !== alarmId));
+  }
+
+  private markAlarmAcknowledged(alarmId: string): void {
+    const currentSnapshot = this.snapshotState();
+
+    if (currentSnapshot === null) {
+      return;
+    }
+
+    this.snapshotState.set({
+      ...currentSnapshot,
+      activeAlarms: currentSnapshot.activeAlarms.map((alarm) =>
+        alarm.id === alarmId
+          ? {
+              ...alarm,
+              status: 'Acknowledged',
+            }
+          : alarm,
+      ),
+    });
+  }
+
+  private scheduleSilentRefresh(): void {
+    const machineId = this.currentMachineIdState();
+
+    if (machineId === null) {
+      return;
+    }
+
+    if (this.silentRefreshTimer !== null) {
+      clearTimeout(this.silentRefreshTimer);
+    }
+
+    this.silentRefreshTimer = setTimeout(() => {
+      this.silentRefreshTimer = null;
+
+      if (this.currentMachineIdState() !== machineId) {
+        return;
+      }
+
+      this.load(machineId, {
+        force: true,
+        silent: true,
+      });
+    }, MACHINE_SNAPSHOT_REALTIME_RECONCILIATION_DELAY_MS);
+  }
+
+  private scheduleProgressSilentRefresh(): void {
+    const machineId = this.currentMachineIdState();
+
+    if (machineId === null || this.silentRefreshTimer !== null) {
+      return;
+    }
+
+    this.silentRefreshTimer = setTimeout(() => {
+      this.silentRefreshTimer = null;
+
+      if (this.currentMachineIdState() !== machineId) {
+        return;
+      }
+
+      this.load(machineId, {
+        force: true,
+        silent: true,
+      });
+    }, MACHINE_SNAPSHOT_PROGRESS_RECONCILIATION_DELAY_MS);
+  }
+
+  private cancelScheduledSilentRefresh(): void {
+    if (this.silentRefreshTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.silentRefreshTimer);
+    this.silentRefreshTimer = null;
+  }
+
+  private createWarningFromNonBlockingAlarm(
+    alarm: MachineSnapshotAlarm,
+    machineId: string,
+  ): MachineSnapshotWarning {
+    return {
+      id: `alarm:${alarm.id}`,
+      machineId,
+      code: alarm.code,
+      severity: alarm.severity,
+      title: alarm.code,
+      message: alarm.message,
+      detectedAt: alarm.raisedAt,
+      resolvedAt: null,
+      isActive: true,
+      sourceId: alarm.id,
+    };
+  }
+
+  private activeNonBlockingAlarms(snapshot: MachineSnapshot): readonly MachineSnapshotAlarm[] {
+    return snapshot.activeAlarms.filter((alarm) => !alarm.isBlocking && isUnresolvedAlarm(alarm));
+  }
+
+  private createNotificationFromAlarm(
+    alarm: MachineSnapshotAlarm,
+    machineId: string,
+    category: MachineNotificationItem['category'],
+  ): MachineNotificationItem {
+    return {
+      id: `${category}:${alarm.id}`,
+      machineId,
+      kind: category,
+      category,
+      lifecycleStatus: alarm.status === 'Acknowledged' ? 'Acknowledged' : 'Active',
+      severity: alarm.severity,
+      title: alarm.code,
+      message: alarm.message,
+      timestamp: alarm.raisedAt,
+      raisedAt: alarm.raisedAt,
+      acknowledgedAt: alarm.acknowledgedAt,
+      isBlocking: alarm.isBlocking,
+      isActive: true,
+      sourceId: alarm.id,
+    };
+  }
+
+  private createNotificationFromWarning(warning: MachineSnapshotWarning): MachineNotificationItem {
+    return {
+      id: `warning:${warning.id}`,
+      machineId: warning.machineId,
+      kind: 'warning',
+      category: 'warning',
+      lifecycleStatus: 'Active',
+      severity: warning.severity,
+      title: warning.title,
+      message: warning.message,
+      timestamp: warning.detectedAt,
+      raisedAt: warning.detectedAt,
+      isBlocking: false,
+      isActive: warning.isActive,
+      sourceId: warning.sourceId ?? warning.id,
+    };
   }
 
   private isStaleResponse(machineId: string, requestVersion: number): boolean {
@@ -319,4 +535,37 @@ export class MachineSnapshotStore {
       warnings: currentSnapshot.warnings,
     };
   }
+}
+
+function shouldRefreshAfterOperationStatus(status: string): boolean {
+  return ['Completed', 'Failed', 'Cancelled', 'Skipped'].includes(status);
+}
+
+function shouldRefreshAfterRuntimeStatus(status: string): boolean {
+  return ['Available', 'Faulted', 'Paused'].includes(status);
+}
+
+function isUnresolvedAlarm(alarm: MachineSnapshotAlarm): boolean {
+  return alarm.status === 'Active' || alarm.status === 'Acknowledged';
+}
+
+function isDuplicateWarningForAlarm(
+  warning: MachineSnapshotWarning,
+  alarmIds: ReadonlySet<string>,
+): boolean {
+  return alarmIds.has(warning.id) || (warning.sourceId !== null && alarmIds.has(warning.sourceId));
+}
+
+function compareNotifications(
+  left: MachineNotificationItem,
+  right: MachineNotificationItem,
+): number {
+  const leftRank = left.lifecycleStatus === 'Active' ? 0 : 1;
+  const rightRank = right.lifecycleStatus === 'Active' ? 0 : 1;
+
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+
+  return right.raisedAt.localeCompare(left.raisedAt);
 }

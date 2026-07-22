@@ -40,6 +40,121 @@ public sealed class LiveSnapshotMathTests
         Assert.Equal(0, aggregate.TotalOperations);
     }
 
+    [Theory]
+    [InlineData(MachineOperationStatus.Queued, 0, 0, 0)]
+    [InlineData(MachineOperationStatus.Running, 40, 40, 0)]
+    [InlineData(MachineOperationStatus.Running, 70, 70, 0)]
+    [InlineData(MachineOperationStatus.Completed, 0, 100, 1)]
+    public void CalculateAggregateProgress_ForSingleOperationMatchesOperationContribution(
+        MachineOperationStatus status,
+        int progressPercentage,
+        decimal expectedProgress,
+        int expectedCompletedOperations
+    )
+    {
+        LiveProgressAggregate aggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [new LiveOperationAggregateInput(status, progressPercentage)]
+        );
+
+        Assert.Equal(expectedProgress, aggregate.ProgressPercentage);
+        Assert.Equal(expectedCompletedOperations, aggregate.CompletedOperations);
+        Assert.Equal(1, aggregate.TotalOperations);
+    }
+
+    [Fact]
+    public void CalculateAggregateProgress_ForTwoByTwoWithOneRunningOperation_IsWeightedByOperationCount()
+    {
+        LiveProgressAggregate aggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Running, 50),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+            ]
+        );
+
+        Assert.Equal(12.50m, aggregate.ProgressPercentage);
+        Assert.Equal(0, aggregate.CompletedOperations);
+        Assert.Equal(4, aggregate.TotalOperations);
+    }
+
+    [Fact]
+    public void CalculateAggregateProgress_ForTwoByTwoWithCompletedAndRunningOperations_IsWeightedByOperationCount()
+    {
+        LiveProgressAggregate aggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Running, 50),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+            ]
+        );
+
+        Assert.Equal(37.50m, aggregate.ProgressPercentage);
+        Assert.Equal(1, aggregate.CompletedOperations);
+        Assert.Equal(4, aggregate.TotalOperations);
+    }
+
+    [Fact]
+    public void CalculateAggregateProgress_WhenCurrentWorkpieceCompletesAndNextWorkpieceStarts_RemainsWeightedByOperationCount()
+    {
+        LiveProgressAggregate lotAggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Running, 25),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+            ]
+        );
+        LiveProgressAggregate currentWorkpieceAggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Running, 25),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+            ]
+        );
+
+        Assert.Equal(56.25m, lotAggregate.ProgressPercentage);
+        Assert.Equal(2, lotAggregate.CompletedOperations);
+        Assert.Equal(4, lotAggregate.TotalOperations);
+        Assert.Equal(12.50m, currentWorkpieceAggregate.ProgressPercentage);
+        Assert.Equal(0, currentWorkpieceAggregate.CompletedOperations);
+        Assert.Equal(2, currentWorkpieceAggregate.TotalOperations);
+    }
+
+    [Fact]
+    public void CalculateAggregateProgress_WhenAllOperationsComplete_ReturnsOneHundredPercent()
+    {
+        LiveProgressAggregate aggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 40),
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 70),
+                new LiveOperationAggregateInput(MachineOperationStatus.Completed, 100),
+            ]
+        );
+
+        Assert.Equal(100m, aggregate.ProgressPercentage);
+        Assert.Equal(4, aggregate.CompletedOperations);
+        Assert.Equal(4, aggregate.TotalOperations);
+    }
+
+    [Fact]
+    public void CalculateAggregateProgress_SkippedCountsAsCompleteAndFailedOrCancelledKeepTheirProgress()
+    {
+        LiveProgressAggregate aggregate = LiveSnapshotMath.CalculateAggregateProgress(
+            [
+                new LiveOperationAggregateInput(MachineOperationStatus.Skipped, 0),
+                new LiveOperationAggregateInput(MachineOperationStatus.Failed, 70),
+                new LiveOperationAggregateInput(MachineOperationStatus.Cancelled, 30),
+                new LiveOperationAggregateInput(MachineOperationStatus.Queued, 0),
+            ]
+        );
+
+        Assert.Equal(50.00m, aggregate.ProgressPercentage);
+        Assert.Equal(1, aggregate.CompletedOperations);
+        Assert.Equal(4, aggregate.TotalOperations);
+    }
+
     [Fact]
     public void CalculateAggregateProgress_PreservesFractionalAverage()
     {

@@ -57,6 +57,7 @@ export interface MachineSnapshotAlarm {
   message: string;
   isBlocking: boolean;
   raisedAt: string;
+  acknowledgedAt?: string | null;
 }
 
 export interface MachineSnapshotWarning {
@@ -73,15 +74,21 @@ export interface MachineSnapshotWarning {
 }
 
 export type MachineNotificationKind = 'alarm' | 'warning';
+export type MachineNotificationLifecycleStatus = 'Active' | 'Acknowledged';
 
 export interface MachineNotificationItem {
   id: string;
   machineId: string;
   kind: MachineNotificationKind;
+  category: MachineNotificationKind;
+  lifecycleStatus: MachineNotificationLifecycleStatus;
   severity: string;
   title: string;
   message: string;
   timestamp: string;
+  raisedAt: string;
+  acknowledgedAt?: string | null;
+  isBlocking: boolean;
   isActive: boolean;
   sourceId: string;
 }

@@ -1,6 +1,5 @@
 using MachineMonitoring.Application.Configuration;
 using MachineMonitoring.Application.Production;
-using MachineMonitoring.Application.Production.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -46,20 +45,9 @@ public sealed class MachineOperationSimulatorWorker : BackgroundService
 
                 MachineRuntimeAssignedOperationQuery assignedOperationQuery =
                     scope.ServiceProvider.GetRequiredService<MachineRuntimeAssignedOperationQuery>();
-                IMachineRuntimeStateRepository runtimeStateRepository =
-                    scope.ServiceProvider.GetRequiredService<IMachineRuntimeStateRepository>();
 
                 IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineOperation> runningOperations =
                     await assignedOperationQuery.GetAssignedRunningOperationsAsync(stoppingToken);
-                IReadOnlyCollection<MachineMonitoring.Domain.Production.MachineRuntimeState> runtimeStates =
-                    await runtimeStateRepository.GetAllAsync(stoppingToken);
-
-                foreach (
-                    MachineMonitoring.Domain.Production.MachineRuntimeState runtimeState in runtimeStates
-                )
-                {
-                    await simulator.ProcessMachineRuntimeAsync(runtimeState, stoppingToken);
-                }
 
                 foreach (MachineMonitoring.Domain.Production.MachineOperation operation in runningOperations)
                 {
