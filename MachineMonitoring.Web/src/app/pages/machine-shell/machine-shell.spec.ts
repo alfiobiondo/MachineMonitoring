@@ -5,6 +5,7 @@ import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 
+import { MachineAlarmApi } from '../../features/machine-monitoring/api/machine-alarm.api';
 import { MachineSnapshotApi } from '../../features/machine-monitoring/api/machine-snapshot.api';
 import { MachineSnapshot } from '../../features/machine-monitoring/models/machine-snapshot.model';
 import { MACHINE_SNAPSHOT_POLLING_INTERVAL_MS } from '../../features/machine-monitoring/services/machine-snapshot-monitoring.service';
@@ -44,6 +45,9 @@ describe('MachineShell', () => {
   let api: {
     getByMachineId: ReturnType<typeof vi.fn>;
   };
+  let alarmApi: {
+    acknowledge: ReturnType<typeof vi.fn>;
+  };
 
   const snapshot: MachineSnapshot = {
     machine: {
@@ -64,6 +68,9 @@ describe('MachineShell', () => {
   beforeEach(async () => {
     api = {
       getByMachineId: vi.fn().mockReturnValue(of(snapshot)),
+    };
+    alarmApi = {
+      acknowledge: vi.fn(),
     };
 
     await TestBed.configureTestingModule({
@@ -91,6 +98,10 @@ describe('MachineShell', () => {
         {
           provide: MachineSnapshotApi,
           useValue: api,
+        },
+        {
+          provide: MachineAlarmApi,
+          useValue: alarmApi,
         },
       ],
     });
@@ -178,6 +189,47 @@ describe('MachineShell', () => {
 
     expect(api.getByMachineId).toHaveBeenCalledWith('M-001');
     expect(api.getByMachineId).toHaveBeenCalledTimes(2);
+  });
+
+  it('should pass mutually exclusive alarm and warning counts to the header', async () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'warning-alarm-1',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-21T08:31:00Z',
+          },
+          {
+            id: 'warning-alarm-2',
+            code: 'SIM-WARN-PRESSURE',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Pressure warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-21T08:32:00Z',
+          },
+        ],
+      }),
+    );
+
+    await fixture.componentInstance.router.navigateByUrl('/machines/M-001/live');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const counts = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        '.header-notifications__count',
+      ) as NodeListOf<HTMLElement>,
+    ).map((item) => item.textContent?.trim());
+
+    expect(counts).toEqual(['0', '2']);
   });
 
   it('should switch monitoring when navigating to another machine', async () => {

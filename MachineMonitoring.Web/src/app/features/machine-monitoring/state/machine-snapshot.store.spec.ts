@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
+import { MachineAlarmApi } from '../api/machine-alarm.api';
 import { MachineSnapshotApi } from '../api/machine-snapshot.api';
 import { MachineSnapshot } from '../models/machine-snapshot.model';
 import {
@@ -19,6 +20,9 @@ describe('MachineSnapshotStore', () => {
   let store: MachineSnapshotStore;
   let api: {
     getByMachineId: ReturnType<typeof vi.fn>;
+  };
+  let alarmApi: {
+    acknowledge: ReturnType<typeof vi.fn>;
   };
 
   const snapshot: MachineSnapshot = {
@@ -99,6 +103,9 @@ describe('MachineSnapshotStore', () => {
     api = {
       getByMachineId: vi.fn(),
     };
+    alarmApi = {
+      acknowledge: vi.fn(),
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -106,6 +113,10 @@ describe('MachineSnapshotStore', () => {
         {
           provide: MachineSnapshotApi,
           useValue: api,
+        },
+        {
+          provide: MachineAlarmApi,
+          useValue: alarmApi,
         },
       ],
     });
@@ -260,7 +271,7 @@ describe('MachineSnapshotStore', () => {
     expect(api.getByMachineId).toHaveBeenCalledTimes(1);
   });
 
-  it('should expose active alarms and blocking alarm counters', () => {
+  it('should expose non-blocking alarms as warnings and blocking alarms as alarms', () => {
     api.getByMachineId.mockReturnValue(
       of({
         ...snapshot,
@@ -290,10 +301,213 @@ describe('MachineSnapshotStore', () => {
     store.load('M-001');
 
     expect(store.hasActiveAlarms()).toBe(true);
-    expect(store.activeAlarmCount()).toBe(2);
+    expect(store.activeAlarmCount()).toBe(1);
+    expect(store.hasActiveWarnings()).toBe(true);
+    expect(store.activeWarningCount()).toBe(1);
     expect(store.hasBlockingAlarms()).toBe(true);
     expect(store.blockingAlarmCount()).toBe(1);
     expect(store.machineStatusLabel()).toBe('Running');
+  });
+
+  it('should classify two non-blocking machine alarms only as warnings', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'warning-alarm-1',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+          {
+            id: 'warning-alarm-2',
+            code: 'SIM-WARN-PRESSURE',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Pressure warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:01:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.activeAlarmCount()).toBe(0);
+    expect(store.activeWarningCount()).toBe(2);
+    expect(store.notifications().map((notification) => notification.category)).toEqual([
+      'warning',
+      'warning',
+    ]);
+  });
+
+  it('should classify two blocking machine alarms only as alarms', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'blocking-alarm-1',
+            code: 'SIM-FAULT-DOOR',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door fault.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+          {
+            id: 'blocking-alarm-2',
+            code: 'SIM-FAULT-AXIS',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Axis fault.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:01:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.activeAlarmCount()).toBe(2);
+    expect(store.activeWarningCount()).toBe(0);
+    expect(store.notifications().map((notification) => notification.category)).toEqual([
+      'alarm',
+      'alarm',
+    ]);
+  });
+
+  it('should keep a mixed blocking and non-blocking alarm in mutually exclusive categories', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'blocking-alarm-1',
+            code: 'SIM-FAULT-DOOR',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door fault.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+          {
+            id: 'warning-alarm-1',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:01:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.activeAlarmCount()).toBe(1);
+    expect(store.activeWarningCount()).toBe(1);
+
+    const notificationCategoriesBySource = new Map(
+      store.notifications().map((notification) => [notification.sourceId, notification.category]),
+    );
+
+    expect(notificationCategoriesBySource.get('blocking-alarm-1')).toBe('alarm');
+    expect(notificationCategoriesBySource.get('warning-alarm-1')).toBe('warning');
+  });
+
+  it('should add snapshot warnings without duplicating machine alarms with the same source', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'warning-alarm-1',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+        ],
+        warnings: [
+          {
+            id: 'warning-alarm-1',
+            machineId: 'M-001',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            title: 'Temperature warning.',
+            message: 'Duplicate projected warning.',
+            detectedAt: '2026-07-20T12:02:00Z',
+            resolvedAt: null,
+            isActive: true,
+            sourceId: 'warning-alarm-1',
+          },
+          {
+            id: 'M-001:OrphanRunningOperation:operation-2',
+            machineId: 'M-001',
+            code: 'OrphanRunningOperation',
+            severity: 'Warning',
+            title: 'Operation running non assegnata',
+            message: 'Operation operation-2 running non allineata.',
+            detectedAt: '2026-07-20T12:01:00Z',
+            resolvedAt: null,
+            isActive: true,
+            sourceId: 'operation-2',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.activeWarningCount()).toBe(2);
+    expect(store.notifications().map((notification) => notification.sourceId)).toEqual([
+      'warning-alarm-1',
+      'operation-2',
+    ]);
+  });
+
+  it('should not expose resolved alarms as active notifications', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'resolved-alarm-1',
+            code: 'AL-RESOLVED',
+            severity: 'Critical',
+            status: 'Resolved',
+            message: 'Resolved alarm.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+          {
+            id: 'resolved-warning-1',
+            code: 'WARN-RESOLVED',
+            severity: 'Warning',
+            status: 'Resolved',
+            message: 'Resolved warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:01:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(store.activeAlarmCount()).toBe(0);
+    expect(store.activeWarningCount()).toBe(0);
+    expect(store.notifications()).toEqual([]);
   });
 
   it('should expose active warnings and a unified notification timeline sorted by timestamp', () => {
@@ -301,6 +515,15 @@ describe('MachineSnapshotStore', () => {
       of({
         ...snapshot,
         activeAlarms: [
+          {
+            id: 'alarm-0',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
           {
             id: 'alarm-1',
             code: 'AL-001',
@@ -331,8 +554,13 @@ describe('MachineSnapshotStore', () => {
     store.load('M-001');
 
     expect(store.hasActiveWarnings()).toBe(true);
-    expect(store.activeWarningCount()).toBe(1);
+    expect(store.activeWarningCount()).toBe(2);
     expect(store.notifications()).toEqual([
+      expect.objectContaining({
+        kind: 'warning',
+        title: 'SIM-WARN-TEMP',
+        timestamp: '2026-07-20T12:02:00Z',
+      }),
       expect.objectContaining({
         kind: 'warning',
         title: 'Operation running non assegnata',
@@ -344,6 +572,182 @@ describe('MachineSnapshotStore', () => {
         timestamp: '2026-07-20T11:59:00Z',
       }),
     ]);
+  });
+
+  it('should sort active notifications before acknowledged ones and then by raised time', () => {
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'acknowledged-newer',
+            code: 'AL-ACK',
+            severity: 'Critical',
+            status: 'Acknowledged',
+            message: 'Acknowledged alarm.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:05:00Z',
+            acknowledgedAt: '2026-07-20T12:06:00Z',
+          },
+          {
+            id: 'active-older',
+            code: 'AL-ACTIVE-OLDER',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Older active alarm.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:01:00Z',
+          },
+          {
+            id: 'active-newer',
+            code: 'WARN-ACTIVE-NEWER',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Newer active warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:03:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+
+    expect(
+      store.notifications().map((notification) => ({
+        sourceId: notification.sourceId,
+        lifecycleStatus: notification.lifecycleStatus,
+      })),
+    ).toEqual([
+      { sourceId: 'active-newer', lifecycleStatus: 'Active' },
+      { sourceId: 'active-older', lifecycleStatus: 'Active' },
+      { sourceId: 'acknowledged-newer', lifecycleStatus: 'Acknowledged' },
+    ]);
+  });
+
+  it('should acknowledge an active notification without removing it from counts', () => {
+    alarmApi.acknowledge.mockReturnValue(of(undefined));
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'warning-alarm-1',
+            code: 'SIM-WARN-TEMP',
+            severity: 'Warning',
+            status: 'Active',
+            message: 'Temperature warning.',
+            isBlocking: false,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+    store.acknowledgeAlarm('warning-alarm-1');
+
+    expect(alarmApi.acknowledge).toHaveBeenCalledTimes(1);
+    expect(alarmApi.acknowledge).toHaveBeenCalledWith('warning-alarm-1');
+    expect(store.activeWarningCount()).toBe(1);
+    expect(store.activeAlarmCount()).toBe(0);
+    expect(store.notifications()[0]).toEqual(
+      expect.objectContaining({
+        sourceId: 'warning-alarm-1',
+        lifecycleStatus: 'Acknowledged',
+      }),
+    );
+    expect(store.loading()).toBe(false);
+  });
+
+  it('should not send duplicate acknowledge requests while one is pending', () => {
+    const request = new Subject<void>();
+    alarmApi.acknowledge.mockReturnValue(request.asObservable());
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'alarm-1',
+            code: 'AL-001',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door interlock is open.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+    store.acknowledgeAlarm('alarm-1');
+    store.acknowledgeAlarm('alarm-1');
+
+    expect(alarmApi.acknowledge).toHaveBeenCalledTimes(1);
+    expect(store.acknowledgingAlarmIds()).toEqual(['alarm-1']);
+
+    request.next();
+    request.complete();
+
+    expect(store.acknowledgingAlarmIds()).toEqual([]);
+  });
+
+  it('should not acknowledge an already acknowledged notification', () => {
+    alarmApi.acknowledge.mockReturnValue(of(undefined));
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'alarm-1',
+            code: 'AL-001',
+            severity: 'Critical',
+            status: 'Acknowledged',
+            message: 'Door interlock is open.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+    store.acknowledgeAlarm('alarm-1');
+
+    expect(alarmApi.acknowledge).not.toHaveBeenCalled();
+    expect(store.notifications()[0].lifecycleStatus).toBe('Acknowledged');
+  });
+
+  it('should keep an active notification and avoid global loading when acknowledge fails', () => {
+    alarmApi.acknowledge.mockReturnValue(throwError(() => new Error('network')));
+    api.getByMachineId.mockReturnValue(
+      of({
+        ...snapshot,
+        activeAlarms: [
+          {
+            id: 'alarm-1',
+            code: 'AL-001',
+            severity: 'Critical',
+            status: 'Active',
+            message: 'Door interlock is open.',
+            isBlocking: true,
+            raisedAt: '2026-07-20T12:02:00Z',
+          },
+        ],
+      }),
+    );
+
+    store.load('M-001');
+    store.acknowledgeAlarm('alarm-1');
+
+    expect(store.activeAlarmCount()).toBe(1);
+    expect(store.notifications()[0].lifecycleStatus).toBe('Active');
+    expect(store.alarmAcknowledgeError()).toBe(
+      'Non è stato possibile riconoscere la segnalazione.',
+    );
+    expect(store.loading()).toBe(false);
+    expect(store.refreshing()).toBe(false);
   });
 
   it('should clear active work on destroy without clearing the visible snapshot', () => {

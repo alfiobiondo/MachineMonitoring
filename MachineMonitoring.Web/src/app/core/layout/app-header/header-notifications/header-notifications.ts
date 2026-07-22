@@ -1,7 +1,10 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, input, signal } from '@angular/core';
+import { Component, computed, input, output, signal } from '@angular/core';
 
-import { AppHeaderContext } from '../../models/app-header-context.model';
+import {
+  AppHeaderContext,
+  AppHeaderNotification,
+} from '../../models/app-header-context.model';
 
 @Component({
   selector: 'app-header-notifications',
@@ -11,6 +14,7 @@ import { AppHeaderContext } from '../../models/app-header-context.model';
 })
 export class HeaderNotifications {
   readonly context = input<AppHeaderContext | null>(null);
+  readonly acknowledgeNotification = output<string>();
   readonly expanded = signal(false);
   readonly panelId = 'header-notifications-panel';
 
@@ -25,11 +29,48 @@ export class HeaderNotifications {
   readonly hasNotifications = computed(() => this.notifications().length > 0);
   readonly alarmCount = computed(() => this.activeAlarms().length);
   readonly warningCount = computed(() => this.activeWarnings().length);
+  readonly acknowledgingAlarmIds = computed(() => this.context()?.acknowledgingAlarmIds ?? []);
+  readonly alarmAcknowledgeError = computed(() => this.context()?.alarmAcknowledgeError ?? null);
   readonly toggleLabel = computed(() =>
     this.expanded() ? 'Chiudi segnalazioni macchina' : 'Apri segnalazioni macchina',
   );
 
   toggle(): void {
     this.expanded.update((value) => !value);
+  }
+
+  acknowledge(notification: AppHeaderNotification): void {
+    if (
+      notification.lifecycleStatus !== 'Active' ||
+      this.isAcknowledging(notification) ||
+      !notification.sourceId
+    ) {
+      return;
+    }
+
+    this.acknowledgeNotification.emit(notification.sourceId);
+  }
+
+  handleNotificationKeydown(event: KeyboardEvent, notification: AppHeaderNotification): void {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    this.acknowledge(notification);
+  }
+
+  isAcknowledging(notification: AppHeaderNotification): boolean {
+    return this.acknowledgingAlarmIds().includes(notification.sourceId);
+  }
+
+  notificationLabel(notification: AppHeaderNotification): string {
+    const category = notification.kind === 'alarm' ? 'allarme' : 'warning';
+
+    if (notification.lifecycleStatus === 'Acknowledged') {
+      return `${category} ${notification.title} già riconosciuto`;
+    }
+
+    return `Riconosci ${category} ${notification.title}`;
   }
 }

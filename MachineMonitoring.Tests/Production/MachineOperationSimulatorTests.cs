@@ -17,7 +17,6 @@ public sealed class MachineOperationSimulatorTests
     private readonly InMemoryMachineOperationEventRepository _eventRepository;
     private readonly Guid _workpieceId;
     private readonly MachineOperationApplicationService _operationService;
-    private readonly MachineRuntimeApplicationService _machineRuntimeService;
     private readonly InMemoryMachineRuntimeStateRepository _runtimeStateRepository = new();
 
     public MachineOperationSimulatorTests()
@@ -62,15 +61,6 @@ public sealed class MachineOperationSimulatorTests
             configurationValidator: new Domain.Technology.LaserCutConfigurationValidator(),
             notificationPublisher: notificationPublisher,
             logger: NullLogger<MachineOperationApplicationService>.Instance
-        );
-
-        _machineRuntimeService = new MachineRuntimeApplicationService(
-            machineProvider: new InMemoryMachineProvider(),
-            runtimeStateRepository: _runtimeStateRepository,
-            operationRepository: _operationRepository,
-            alarmRepository: _alarmRepository,
-            transactionManager: new NoOpProductionTransactionManager(),
-            notificationPublisher: new NoOpProductionNotificationPublisher()
         );
 
         ProductionLot lot = new(
@@ -124,6 +114,35 @@ public sealed class MachineOperationSimulatorTests
         Assert.NotNull(storedOperation);
         Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
         Assert.Equal(20, storedOperation.ProgressPercentage);
+    }
+
+    [Fact]
+    public async Task ProcessRunningOperationAsync_DoesNotCreateWarningsOrFaults()
+    {
+        MachineOperation operation = await CreatePersistedRunningOperationAsync();
+        MachineOperationSimulator simulator = CreateSimulator(
+            progressStrategy: new FixedOperationProgressStrategy(20)
+        );
+
+        await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
+
+        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+        IReadOnlyCollection<MachineAlarm> alarms = await _alarmRepository.GetByOperationIdAsync(
+            operation.Id,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(storedOperation);
+        Assert.Equal(MachineOperationStatus.Running, storedOperation.Status);
+        Assert.Equal(20, storedOperation.ProgressPercentage);
+        Assert.Empty(alarms);
+        Assert.DoesNotContain(
+            _eventRepository.Items,
+            item => item.EventType == MachineOperationEventType.Faulted
+        );
     }
 
     [Fact]
@@ -343,110 +362,13 @@ public sealed class MachineOperationSimulatorTests
         Assert.Equal(40, storedOperation.ProgressPercentage);
     }
 
-    [Fact]
-    public async Task ProcessRunningOperationAsync_WhenOperationFaults_DoesNotAdvanceInSameTick()
-    {
-        MachineOperation operation = await CreatePersistedRunningOperationAsync();
-        MachineOperationSimulator simulator = CreateSimulator(
-            progressStrategy: new FixedOperationProgressStrategy(20),
-            operationFaultStrategy: new DeterministicOperationFaultStrategy(
-                shouldFaultOnInvocation: 1
-            )
-        );
-
-        await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
-
-        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
-            operation.Id,
-            CancellationToken.None
-        );
-        MachineRuntimeState? runtimeState = await _runtimeStateRepository.GetByMachineIdAsync(
-            operation.MachineId,
-            CancellationToken.None
-        );
-        MachineAlarm alarm = Assert.Single(
-            await _alarmRepository.GetByOperationIdAsync(operation.Id, CancellationToken.None)
-        );
-        MachineOperationEvent faultedEvent = Assert.Single(
-            _eventRepository.Items,
-            item => item.EventType == MachineOperationEventType.Faulted
-        );
-
-        Assert.NotNull(storedOperation);
-        Assert.NotNull(runtimeState);
-        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
-        Assert.Equal(0, storedOperation.ProgressPercentage);
-        Assert.Equal(MachineRuntimeStatus.Faulted, runtimeState.Status);
-        Assert.Equal(alarm.Id, faultedEvent.MachineAlarmId);
-    }
-
-    [Fact]
-    public async Task ProcessRunningOperationAsync_WhenMachineFaults_DoesNotAdvanceInSameTick()
-    {
-        MachineOperation operation = await CreatePersistedRunningOperationAsync();
-        MachineOperationSimulator simulator = CreateSimulator(
-            progressStrategy: new FixedOperationProgressStrategy(20),
-            machineFaultStrategy: new DeterministicMachineFaultStrategy(shouldFaultOnInvocation: 1)
-        );
-
-        await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
-
-        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
-            operation.Id,
-            CancellationToken.None
-        );
-        MachineRuntimeState? runtimeState = await _runtimeStateRepository.GetByMachineIdAsync(
-            operation.MachineId,
-            CancellationToken.None
-        );
-        MachineAlarm alarm = Assert.Single(
-            await _alarmRepository.GetByOperationIdAsync(operation.Id, CancellationToken.None)
-        );
-
-        Assert.NotNull(storedOperation);
-        Assert.NotNull(runtimeState);
-        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
-        Assert.Equal(0, storedOperation.ProgressPercentage);
-        Assert.Equal(MachineRuntimeStatus.Faulted, runtimeState.Status);
-        Assert.Equal(operation.Id, alarm.MachineOperationId);
-    }
-
-    [Fact]
-    public async Task ProcessRunningOperationAsync_WhenFaultIsConfiguredOnSecondTick_FaultsWithoutApplyingIncrement()
-    {
-        MachineOperation operation = await CreatePersistedRunningOperationAsync();
-        MachineOperationSimulator simulator = CreateSimulator(
-            progressStrategy: new FixedOperationProgressStrategy(20),
-            operationFaultStrategy: new DeterministicOperationFaultStrategy(
-                shouldFaultOnInvocation: 2
-            )
-        );
-
-        await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
-        await simulator.ProcessRunningOperationAsync(operation, CancellationToken.None);
-
-        MachineOperation? storedOperation = await _operationRepository.GetByIdAsync(
-            operation.Id,
-            CancellationToken.None
-        );
-
-        Assert.NotNull(storedOperation);
-        Assert.Equal(MachineOperationStatus.Faulted, storedOperation.Status);
-        Assert.Equal(20, storedOperation.ProgressPercentage);
-    }
-
     private MachineOperationSimulator CreateSimulator(
-        IOperationProgressStrategy? progressStrategy = null,
-        IOperationFaultStrategy? operationFaultStrategy = null,
-        IMachineFaultStrategy? machineFaultStrategy = null
+        IOperationProgressStrategy? progressStrategy = null
     )
     {
         return new MachineOperationSimulator(
             _operationService,
-            _machineRuntimeService,
             progressStrategy ?? new FixedOperationProgressStrategy(20),
-            operationFaultStrategy ?? new NoOperationFaultStrategy(),
-            machineFaultStrategy ?? new NoMachineFaultStrategy(),
             NullLogger<MachineOperationSimulator>.Instance
         );
     }
@@ -664,27 +586,6 @@ public sealed class MachineOperationSimulatorTests
         }
     }
 
-    private sealed class InMemoryMachineProvider : IMachineProvider
-    {
-        private readonly IReadOnlyCollection<Domain.Machine> _machines =
-        [
-            new Domain.Machine(
-                id: "M-001",
-                name: "Laser Cutter",
-                status: Domain.MachineStatus.Running,
-                location: "Production Hall A",
-                serialNumber: "SN-2026-001"
-            ),
-        ];
-
-        public Task<IReadOnlyCollection<Domain.Machine>> GetMachinesAsync(
-            CancellationToken cancellationToken
-        )
-        {
-            return Task.FromResult(_machines);
-        }
-    }
-
     private sealed class RecordingLogger<T> : ILogger<T>
     {
         public List<string> WarningMessages { get; } = [];
@@ -771,55 +672,4 @@ public sealed class MachineOperationSimulatorTests
         }
     }
 
-    private sealed class DeterministicOperationFaultStrategy : IOperationFaultStrategy
-    {
-        private readonly int _shouldFaultOnInvocation;
-        private int _invocationCount;
-
-        public DeterministicOperationFaultStrategy(int shouldFaultOnInvocation)
-        {
-            _shouldFaultOnInvocation = shouldFaultOnInvocation;
-        }
-
-        public OperationFaultDecision Evaluate(MachineOperation operation)
-        {
-            _invocationCount++;
-
-            return _invocationCount == _shouldFaultOnInvocation
-                ? new OperationFaultDecision(
-                    ShouldFault: true,
-                    AlarmCode: "SIM_OPERATION_FAULT",
-                    Severity: MachineAlarmSeverity.Warning,
-                    Message: "Simulated operation fault",
-                    Reason: "Simulated operation fault"
-                )
-                : OperationFaultDecision.None;
-        }
-    }
-
-    private sealed class DeterministicMachineFaultStrategy : IMachineFaultStrategy
-    {
-        private readonly int _shouldFaultOnInvocation;
-        private int _invocationCount;
-
-        public DeterministicMachineFaultStrategy(int shouldFaultOnInvocation)
-        {
-            _shouldFaultOnInvocation = shouldFaultOnInvocation;
-        }
-
-        public MachineFaultDecision Evaluate(string machineId, Guid? currentOperationId)
-        {
-            _invocationCount++;
-
-            return _invocationCount == _shouldFaultOnInvocation
-                ? new MachineFaultDecision(
-                    ShouldFault: true,
-                    AlarmCode: "SIM_MACHINE_FAULT",
-                    Severity: MachineAlarmSeverity.Error,
-                    Message: "Simulated machine fault",
-                    Reason: "Simulated machine fault"
-                )
-                : MachineFaultDecision.None;
-        }
-    }
 }

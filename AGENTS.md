@@ -859,11 +859,11 @@ tabelle che possono già contenere dati:
 - `MachineOperation` e `MachineRuntimeState` devono restare coerenti nella
   stessa transazione durante `Start`, `Pause`, `Resume`, `Complete`,
   `Cancel`, `Fail` e `Fault`.
-- I fault casuali della lavorazione e i guasti casuali macchina usano
-  strategie separate:
-  - `IOperationFaultStrategy`;
-  - `IMachineFaultStrategy`.
-- La probabilità di fault casuale è configurabile e disattivata di default.
+- `MachineOperationSimulator` non genera più fault casuali.
+  Il suo perimetro resta limitato ad avanzamento progress, fase corrente e
+  completamento.
+- Gli incidenti simulati, quando presenti, devono provenire da un simulatore
+  incidenti separato dal simulatore operation.
 - Gli allarmi bloccanti sono definiti centralmente:
   - `Information`: non bloccante;
   - `Warning`: non bloccante;

@@ -22,9 +22,11 @@ scripts/
 |   |-- create_fault_scenario.py
 |   |-- pause_current_operation.py
 |   |-- recover_fault_scenario.py
+|   |-- resolve_warnings.py
 |   `-- resume_current_operation.py
 |-- pause-machine.sh
 |-- recover-machine.sh
+|-- resolve-warnings.sh
 |-- run-live-demo.sh
 `-- resume-machine.sh
 ```
@@ -216,6 +218,43 @@ python3 scripts/scenarios/resume_current_operation.py --machine-id M-001
 
 Lo script richiede una current operation `Paused`. Dopo il resume verifica che machine e operation siano `Running`, che la current operation sia la stessa e che il progress sia conservato.
 
+## resolve_warnings
+
+Risolve soltanto warning macchina non bloccanti presenti nello snapshot Live.
+Non risolve mai blocking alarm.
+
+Endpoint usati:
+
+```text
+GET  /api/machines/{machineId}/live-snapshot
+POST /api/alarms/{alarmId}/resolve
+GET  /api/machines/{machineId}/live-snapshot
+```
+
+Payload resolve:
+
+```json
+{
+  "resolutionNotes": "Resolved from resolve_warnings.py."
+}
+```
+
+Esempi:
+
+```bash
+./scripts/resolve-warnings.sh --machine-id M-001
+./scripts/resolve-warnings.sh --machine-id M-001 --alarm-id <id> --non-interactive
+./scripts/resolve-warnings.sh \
+  --machine-id M-001 \
+  --all \
+  --resolution-notes "Resolved during smoke test." \
+  --non-interactive
+```
+
+In modalita' interattiva mostra i warning non bloccanti `Active` o `Acknowledged` con id, code, message, status e raisedAt; poi chiede se risolverne uno o tutti.
+
+In modalita' `--non-interactive` serve `--alarm-id` oppure `--all`. Se l'id indicato appartiene a un blocking alarm, lo script termina con errore senza chiamare resolve.
+
 ## Modalita' Interattiva E CLI
 
 `create_live_demo.py` senza `--non-interactive` chiede i valori principali mostrando i default tra parentesi. Invio accetta il default. I booleani accettano `s/n`, `si/no`, `y/n`.
@@ -233,4 +272,5 @@ Con `--non-interactive` non viene aperto nessun prompt; lo script usa gli argome
 - Operation non `Paused`: `resume_current_operation.py` puo' riprendere solo operation `Paused`.
 - Macchina `Faulted`: risolvere prima l'allarme bloccante con `recover_fault_scenario.py`.
 - Piu' allarmi ambigui: usare la modalita' interattiva per scegliere quale allarme risolvere.
+- Alarm bloccante passato a `resolve_warnings.py`: lo script rifiuta l'operazione e non invia resolve.
 - `422 Business rule violation`: il client stampa status, title, detail e `traceId` quando presenti nel `problem+json`.

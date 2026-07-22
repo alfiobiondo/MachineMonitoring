@@ -40,9 +40,11 @@ export class MachineShell {
     return {
       machine: snapshot.machine,
       runtimeVersion: snapshot.runtimeVersion,
-      activeAlarms: snapshot.activeAlarms,
+      activeAlarms: this.snapshotStore.activeAlarms(),
       activeWarnings: this.snapshotStore.activeWarnings(),
       notifications: this.snapshotStore.notifications(),
+      acknowledgingAlarmIds: this.snapshotStore.acknowledgingAlarmIds(),
+      alarmAcknowledgeError: this.snapshotStore.alarmAcknowledgeError(),
       snapshotAt: snapshot.snapshotAt,
     };
   });
